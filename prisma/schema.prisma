@@ -1,0 +1,291 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Session {
+  id                String                @id
+  status            String                @default("waiting")
+  hostId            String                @map("host_id")
+  partnerId         String?               @map("partner_id")
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  startedAt         DateTime?             @map("started_at") @db.Timestamptz(6)
+  completedAt       DateTime?             @map("completed_at") @db.Timestamptz(6)
+  relationshipStage String?               @map("relationship_stage")
+  goal              String?
+  currentStep       String                @default("home") @map("current_step")
+  state             SessionState?
+  participants      SessionParticipant[]
+  flowProgress      SessionFlowProgress?
+  abInteractions    AbInteraction[]
+  mirrorEvents      MirrorEvent[]
+  presentMoments    PresentMoment[]
+  mapState          RelationshipMapState?
+  discoveries       Discovery[]
+  summaries         SessionSummary[]
+  exploration       ExplorationSession?
+
+  @@map("sessions")
+}
+
+model SessionState {
+  sessionId   String   @id @map("session_id")
+  sharedState Json     @map("shared_state")
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("session_state")
+}
+
+model SessionParticipant {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId     String    @map("session_id")
+  participantId String    @map("participant_id")
+  role          String
+  joinedAt      DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  lastSeenAt    DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  displayName   String?   @map("display_name")
+  avatarUrl     String?   @map("avatar_url")
+  session       Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, participantId])
+  @@index([sessionId])
+  @@map("session_participants")
+}
+
+model SessionFlowProgress {
+  sessionId            String   @id @map("session_id")
+  currentStep          String   @default("home") @map("current_step")
+  relationshipStage    String?  @map("relationship_stage")
+  goal                 String?
+  route                Json     @default("{}")
+  journeyLength        Int      @default(0) @map("journey_length")
+  currentQuestionIndex Int      @default(0) @map("current_question_index")
+  updatedAt            DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  session              Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("session_flow_progress")
+}
+
+model AbInteraction {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId         String              @map("session_id")
+  spaceId           String?             @map("space_id") @db.Uuid
+  explorationId     String?             @map("exploration_id") @db.Uuid
+  questionId        String              @map("question_id")
+  questionText      String              @map("question_text")
+  hostAnswer        String?             @map("host_answer")
+  partnerAnswer     String?             @map("partner_answer")
+  hostAnsweredAt    DateTime?           @map("host_answered_at") @db.Timestamptz(6)
+  partnerAnsweredAt DateTime?           @map("partner_answered_at") @db.Timestamptz(6)
+  result            Json?
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt       DateTime?           @map("completed_at") @db.Timestamptz(6)
+  session           Session             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  space             RelationshipSpace?  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  exploration       ExplorationSession? @relation(fields: [explorationId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([spaceId])
+  @@index([explorationId])
+  @@index([questionId])
+  @@map("ab_interactions")
+}
+
+model MirrorEvent {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId         String              @map("session_id")
+  spaceId           String?             @map("space_id") @db.Uuid
+  explorationId     String?             @map("exploration_id") @db.Uuid
+  eventKey          String?             @map("event_key")
+  title             String
+  prompt            String
+  hostChoice        String?             @map("host_choice")
+  partnerChoice     String?             @map("partner_choice")
+  hostReflection    String?             @map("host_reflection")
+  partnerReflection String?             @map("partner_reflection")
+  result            Json?
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt       DateTime?           @map("completed_at") @db.Timestamptz(6)
+  session           Session             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  space             RelationshipSpace?  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  exploration       ExplorationSession? @relation(fields: [explorationId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([spaceId])
+  @@index([explorationId])
+  @@index([eventKey])
+  @@map("mirror_events")
+}
+
+model PresentMoment {
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId     String              @map("session_id")
+  spaceId       String?             @map("space_id") @db.Uuid
+  explorationId String?             @map("exploration_id") @db.Uuid
+  participantId String              @map("participant_id")
+  userId        String?             @map("user_id")
+  imageUrl      String?             @map("image_url")
+  textContent   String?             @map("text_content")
+  mood          String?
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  session       Session             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  space         RelationshipSpace?  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  exploration   ExplorationSession? @relation(fields: [explorationId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([spaceId])
+  @@index([explorationId])
+  @@index([participantId])
+  @@index([userId])
+  @@map("present_moments")
+}
+
+model RelationshipMapState {
+  sessionId     String             @id @map("session_id")
+  spaceId       String?            @map("space_id") @db.Uuid
+  unlockedAreas Json               @default("[]") @map("unlocked_areas")
+  activeArea    String?            @map("active_area")
+  mapState      Json               @default("{}") @map("map_state")
+  updatedAt     DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
+  session       Session            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  space         RelationshipSpace? @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@map("relationship_map_states")
+}
+
+model Discovery {
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId     String              @map("session_id")
+  spaceId       String?             @map("space_id") @db.Uuid
+  explorationId String?             @map("exploration_id") @db.Uuid
+  sourceType    String              @map("source_type")
+  sourceId      String?             @map("source_id") @db.Uuid
+  title         String
+  content       String
+  tags          String[]            @default([])
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  session       Session             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  space         RelationshipSpace?  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  exploration   ExplorationSession? @relation(fields: [explorationId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([spaceId])
+  @@index([explorationId])
+  @@index([sourceType])
+  @@map("discoveries")
+}
+
+model SessionSummary {
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId     String              @map("session_id")
+  spaceId       String?             @map("space_id") @db.Uuid
+  explorationId String?             @map("exploration_id") @db.Uuid
+  summaryText   String              @map("summary_text")
+  highlights    Json                @default("[]")
+  suggestions   Json                @default("[]")
+  generatedFrom Json                @default("{}") @map("generated_from")
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  session       Session             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  space         RelationshipSpace?  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  exploration   ExplorationSession? @relation(fields: [explorationId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([spaceId])
+  @@index([explorationId])
+  @@map("session_summaries")
+}
+
+model RelationshipSpace {
+  id                     String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type                   String
+  status                 String                    @default("waiting")
+  inviteCode             String                    @unique @map("invite_code")
+  name                   String?
+  createdByUserId        String?                   @map("created_by_user_id")
+  createdByParticipantId String?                   @map("created_by_participant_id")
+  expiresAt              DateTime?                 @map("expires_at") @db.Timestamptz(6)
+  createdAt              DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  members                RelationshipSpaceMember[]
+  explorations           ExplorationSession[]
+  abInteractions         AbInteraction[]
+  mirrorEvents           MirrorEvent[]
+  presentMoments         PresentMoment[]
+  mapStates              RelationshipMapState[]
+  discoveries            Discovery[]
+  summaries              SessionSummary[]
+
+  @@index([type])
+  @@index([status])
+  @@index([createdByUserId])
+  @@index([createdByParticipantId])
+  @@map("relationship_spaces")
+}
+
+model RelationshipSpaceMember {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  spaceId       String            @map("space_id") @db.Uuid
+  spaceType     String            @map("space_type")
+  userId        String?           @map("user_id")
+  participantId String?           @map("participant_id")
+  role          String
+  status        String            @default("active")
+  joinedAt      DateTime          @default(now()) @map("joined_at") @db.Timestamptz(6)
+  leftAt        DateTime?         @map("left_at") @db.Timestamptz(6)
+  lastSeenAt    DateTime?         @map("last_seen_at") @db.Timestamptz(6)
+  displayName   String?           @map("display_name")
+  avatarUrl     String?           @map("avatar_url")
+  space         RelationshipSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@unique([spaceId, userId])
+  @@unique([spaceId, participantId])
+  @@index([spaceId])
+  @@index([userId])
+  @@index([participantId])
+  @@index([spaceType, status])
+  @@map("relationship_space_members")
+}
+
+model ExplorationSession {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  spaceId           String            @map("space_id") @db.Uuid
+  legacySessionId   String?           @unique @map("legacy_session_id")
+  mode              String
+  status            String            @default("draft")
+  relationshipStage String?           @map("relationship_stage")
+  goal              String?
+  currentStep       String            @default("home") @map("current_step")
+  startedAt         DateTime?         @map("started_at") @db.Timestamptz(6)
+  completedAt       DateTime?         @map("completed_at") @db.Timestamptz(6)
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  space             RelationshipSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  legacySession     Session?          @relation(fields: [legacySessionId], references: [id], onDelete: SetNull)
+  state             ExplorationState?
+  abInteractions    AbInteraction[]
+  mirrorEvents      MirrorEvent[]
+  presentMoments    PresentMoment[]
+  discoveries       Discovery[]
+  summaries         SessionSummary[]
+
+  @@index([spaceId])
+  @@index([mode])
+  @@index([status])
+  @@map("exploration_sessions")
+}
+
+model ExplorationState {
+  explorationId String             @id @map("exploration_id") @db.Uuid
+  sharedState   Json               @map("shared_state")
+  updatedAt     DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
+  exploration   ExplorationSession @relation(fields: [explorationId], references: [id], onDelete: Cascade)
+
+  @@map("exploration_state")
+}

@@ -1,0 +1,38 @@
+{
+  "name": "love-atlas-lite",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "serve": "tsx src/server/index.ts",
+    "spaces:cleanup": "tsx scripts/cleanupExpiredSpaces.ts",
+    "spaces:smoke": "tsx scripts/spaceSmokeTest.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "5.22.0",
+    "@supabase/supabase-js": "2.45.4",
+    "@vitejs/plugin-react": "4.3.4",
+    "framer-motion": "11.18.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vite": "5.4.21",
+    "zustand": "5.0.9"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.27",
+    "@types/react": "18.3.27",
+    "@types/react-dom": "18.3.7",
+    "autoprefixer": "10.4.22",
+    "postcss": "8.5.6",
+    "prisma": "5.22.0",
+    "tailwindcss": "3.4.17"
+  }
+}

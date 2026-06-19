@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>发现 — Love Atlas Lite</title>
+    <script src="scripts/discoveryEngine.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: linear-gradient(180deg, #0a0a1a 0%, #151525 50%, #0a0a1a 100%);
+            color: #f5f5f5;
+            min-height: 100vh;
+            padding: 0;
+        }
+
+        .back-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #f5f5f5;
+            padding: 10px 16px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 14px;
+            z-index: 100;
+            transition: all 0.2s;
+        }
+
+        .back-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 60px 20px 80px;
+        }
+
+        .page-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .page-header .icon {
+            font-size: 56px;
+            margin-bottom: 16px;
+        }
+
+        .page-header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            letter-spacing: 0.05em;
+        }
+
+        .page-header p {
+            color: #a0a0b0;
+            font-size: 15px;
+        }
+
+        .filter-tabs {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+        }
+
+        .filter-tab {
+            padding: 8px 16px;
+            border-radius: 50px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #a0a0b0;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-tab:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #f5f5f5;
+        }
+
+        .filter-tab.active {
+            background: rgba(139, 92, 246, 0.2);
+            border-color: rgba(139, 92, 246, 0.4);
+            color: #c4b5fd;
+        }
+
+        .discovery-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .discovery-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.03) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .discovery-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .discovery-card .card-top {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .discovery-card .card-icon {
+            font-size: 32px;
+        }
+
+        .discovery-card .card-title {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .discovery-card .card-category {
+            font-size: 12px;
+            color: #8b5cf6;
+            background: rgba(139, 92, 246, 0.15);
+            padding: 4px 8px;
+            border-radius: 50px;
+            margin-left: auto;
+        }
+
+        .discovery-card .card-message {
+            color: #d0d0d8;
+            line-height: 1.7;
+            margin-bottom: 12px;
+        }
+
+        .discovery-card .card-time {
+            font-size: 12px;
+            color: #70707a;
+        }
+
+        .divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            margin: 8px 0;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: #70707a;
+        }
+
+        .empty-state .empty-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state h3 {
+            font-size: 18px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #a0a0b0;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 60px 16px 80px;
+            }
+
+            .page-header h1 {
+                font-size: 24px;
+            }
+
+            .discovery-card {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <button class="back-btn" onclick="goBack()">← 返回</button>
+
+    <div class="container">
+        <div class="page-header">
+            <div class="icon">✨</div>
+            <h1>发现</h1>
+            <p>你们一起走过的地方，留下的每一个发现</p>
+        </div>
+
+        <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="all" onclick="setFilter('all')">全部</button>
+            <button class="filter-tab" data-filter="event" onclick="setFilter('event')">事件</button>
+            <button class="filter-tab" data-filter="region" onclick="setFilter('region')">区域</button>
+            <button class="filter-tab" data-filter="journey" onclick="setFilter('journey')">旅程</button>
+        </div>
+
+        <div class="discovery-list" id="discovery-list">
+            <!-- 发现卡片在这里动态生成 -->
+        </div>
+
+        <div class="empty-state hidden" id="empty-state">
+            <div class="empty-icon">📖</div>
+            <h3>还没有发现</h3>
+            <p>开始一次探索，你们会留下第一个发现。</p>
+        </div>
+    </div>
+
+    <script>
+        const STORAGE_KEY_DISCOVERIES = 'loveAtlasDiscoveries';
+        let currentFilter = 'all';
+        let allDiscoveries = [];
+
+        function goBack() {
+            if (document.referrer && document.referrer.length > 0) {
+                window.location.href = document.referrer;
+            } else {
+                window.location.href = 'Love Atlas Lite.html';
+            }
+        }
+
+        function loadDiscoveries() {
+            try {
+                const data = localStorage.getItem(STORAGE_KEY_DISCOVERIES);
+                if (!data) {
+                    // 尝试从旧数据迁移
+                    const oldUnlock = localStorage.getItem('loveAtlasProgress');
+                    if (oldUnlock) {
+                        try {
+                            const parsed = JSON.parse(oldUnlock);
+                            if (window.DiscoveryEngine && window.DiscoveryEngine.migrateFromOldData) {
+                                const migrated = window.DiscoveryEngine.migrateFromOldData(parsed);
+                                if (migrated.length > 0) {
+                                    localStorage.setItem(STORAGE_KEY_DISCOVERIES, JSON.stringify(migrated));
+                                    return migrated;
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Migration failed', e);
+                        }
+                    }
+                    return [];
+                }
+                return JSON.parse(data);
+            } catch (e) {
+                console.warn('Failed to load discoveries', e);
+                return [];
+            }
+        }
+
+        function setFilter(filter) {
+            currentFilter = filter;
+            document.querySelectorAll('.filter-tab').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.filter === filter);
+            });
+            renderDiscoveries();
+        }
+
+        function renderDiscoveries() {
+            const listEl = document.getElementById('discovery-list');
+            const emptyEl = document.getElementById('empty-state');
+
+            let filtered = allDiscoveries;
+            if (currentFilter !== 'all') {
+                filtered = allDiscoveries.filter(d => d.category === currentFilter);
+            }
+
+            if (!filtered || filtered.length === 0) {
+                listEl.classList.add('hidden');
+                emptyEl.classList.remove('hidden');
+                return;
+            }
+
+            listEl.classList.remove('hidden');
+            emptyEl.classList.add('hidden');
+
+            // 最新在前
+            const sorted = [...filtered].reverse();
+
+            const categoryNames = {
+                event: '事件',
+                region: '区域',
+                journey: '旅程'
+            };
+
+            listEl.innerHTML = sorted.map(d => `
+                <div class="discovery-card">
+                    <div class="card-top">
+                        <div class="card-icon">${d.icon || '✨'}</div>
+                        <div>
+                            <div class="card-title">${d.title || '发现'}</div>
+                            <div class="card-time">${d.time || ''}</div>
+                        </div>
+                        <div class="card-category">${categoryNames[d.category] || '发现'}</div>
+                    </div>
+                    <div class="card-message">${d.message || ''}</div>
+                </div>
+            `).join('');
+        }
+
+        // 初始化
+        allDiscoveries = loadDiscoveries();
+        renderDiscoveries();
+    </script>
+</body>
+</html>
