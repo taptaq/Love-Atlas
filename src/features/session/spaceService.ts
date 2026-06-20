@@ -16,14 +16,23 @@ async function postJson<T>(url: string, body: unknown) {
     headers: await createHeaders(),
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw new Error(await readErrorMessage(response));
   return response.json() as Promise<T>;
 }
 
 async function getJson<T>(url: string) {
   const response = await fetch(url, { headers: await createHeaders() });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw new Error(await readErrorMessage(response));
   return response.json() as Promise<T>;
+}
+
+async function readErrorMessage(response: Response) {
+  const text = await response.text();
+  try {
+    const parsed = JSON.parse(text) as { error?: unknown };
+    if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error;
+  } catch {}
+  return text || `Request failed with status ${response.status}`;
 }
 
 export async function createTemporarySpace(sharedState: RelationshipSharedState) {
@@ -71,11 +80,17 @@ export async function loadSpaceLibrary(spaceId: string) {
   return getJson<SpaceLibraryResult>(`/api/spaces/library/${encodeURIComponent(spaceId)}`);
 }
 
-export async function sendSpaceHeartbeat(spaceId: string, userId: string) {
-  return postJson<{ ok: boolean }>('/api/spaces/heartbeat', { spaceId, userId });
+export async function sendSpaceHeartbeat(spaceId: string, userId?: string) {
+  const participantId = createParticipantId();
+  return postJson<{ ok: boolean }>('/api/spaces/heartbeat', { spaceId, userId, participantId });
 }
 
 export async function unbindPersistentSpace(spaceId: string, userId: string) {
   const participantId = createParticipantId();
   return postJson<UnbindSpaceResult>('/api/spaces/unbind', { spaceId, participantId, userId });
+}
+
+export async function leaveSpace(spaceId: string, userId?: string) {
+  const participantId = createParticipantId();
+  return postJson<{ ok: boolean }>('/api/spaces/leave', { spaceId, participantId, userId });
 }

@@ -1,16 +1,28 @@
 import type { RelationshipSession, RelationshipSharedState } from '../../types/session';
 
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // 非安全上下文（如局域网 HTTP 访问）下的回退方案
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const random = Math.random() * 16 | 0;
+    const value = char === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 export function createParticipantId() {
   const key = 'relationship-os-participant-id';
   const existing = localStorage.getItem(key);
   if (existing) return existing;
-  const id = crypto.randomUUID();
+  const id = generateUUID();
   localStorage.setItem(key, id);
   return id;
 }
 
 export function createSessionId() {
-  return crypto.randomUUID().slice(0, 8).toUpperCase();
+  return generateUUID().slice(0, 8).toUpperCase();
 }
 
 async function postJson<T>(url: string, body: unknown) {

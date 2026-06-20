@@ -47,6 +47,8 @@ export interface ABAnswers {
   intensity: 'high' | 'medium' | 'low';
   insights: ABInsights | null;
   revealVisible: boolean;
+  answerAReady: boolean;
+  answerBReady: boolean;
 }
 
 export interface JourneyHistoryItem {

@@ -3,16 +3,10 @@ import { loadExplorationDetail, listSpaceExplorations } from '../../features/ses
 import { useSessionStore } from '../../features/session/useSessionStore';
 import { useSpaceStore } from '../../features/session/useSpaceStore';
 import { t } from '../../i18n';
+import { formatDate, readableList } from '../../lib/format';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { useJourneyStore, useUiStore } from '../../store';
 import type { ExplorationDetailResult, ExplorationSession } from '../../types/space';
-
-function formatDate(language: 'cn' | 'en', value: string) {
-  return new Date(value).toLocaleString(language === 'cn' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function readableList(value: unknown) {
-  return Array.isArray(value) ? value.filter(Boolean).join(' · ') : '';
-}
 
 export function ExplorationHistoryPage() {
   const language = useUiStore((state) => state.language);
@@ -24,20 +18,32 @@ export function ExplorationHistoryPage() {
   const [explorations, setExplorations] = useState<ExplorationSession[]>([]);
   const [selectedExplorationId, setSelectedExplorationId] = useState('');
   const [explorationDetail, setExplorationDetail] = useState<ExplorationDetailResult | null>(null);
+  const [isListLoading, setIsListLoading] = useState(true);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
 
   useEffect(() => {
-    if (!space || !session || space.type !== 'persistent') return;
+    if (!space || !session || space.type !== 'persistent') {
+      setIsListLoading(false);
+      return;
+    }
+    setIsListLoading(true);
     void listSpaceExplorations(space.id).then((result) => {
       setExplorations(result.explorations);
       const selected = result.explorations.find((item) => item.id === selectedFromStore) ?? result.explorations[0];
       if (selected) {
         setSelectedExplorationId(selected.id);
         setSelectedInStore(selected.id);
-        void loadExplorationDetail(selected.id).then(setExplorationDetail).catch(() => setExplorationDetail(null));
+        setIsDetailLoading(true);
+        void loadExplorationDetail(selected.id).then(setExplorationDetail).catch(() => setExplorationDetail(null)).finally(() => setIsDetailLoading(false));
+      } else {
+        setSelectedExplorationId('');
+        setExplorationDetail(null);
       }
     }).catch(() => {
       setExplorations([]);
       setExplorationDetail(null);
+    }).finally(() => {
+      setIsListLoading(false);
     });
   }, [space, session, selectedFromStore, setSelectedInStore]);
 
@@ -45,15 +51,20 @@ export function ExplorationHistoryPage() {
     try {
       setSelectedExplorationId(explorationId);
       setSelectedInStore(explorationId);
+      setExplorationDetail(null);
+      setIsDetailLoading(true);
       const detail = await loadExplorationDetail(explorationId);
       setExplorationDetail(detail);
     } catch {
       setExplorationDetail(null);
+    } finally {
+      setIsDetailLoading(false);
     }
   };
 
   return (
     <main className="page flow-page exploration-history-page">
+      <LoadingOverlay visible={isListLoading} message={language === 'cn' ? '正在加载历史探索…' : 'Loading exploration history…'} />
       <button className="back-link" type="button" onClick={() => goToStep('home')}>← {t(language, 'back')}</button>
       <section className="flow-header">
         <span className="step-pill">{language === 'cn' ? '历史探索' : 'Past Explorations'}</span>
@@ -65,8 +76,18 @@ export function ExplorationHistoryPage() {
         <div className="history-list-card">
           <span className="eyebrow">{language === 'cn' ? '历史列表' : 'History List'}</span>
           <div className="history-list">
-            {explorations.length === 0 ? (
-              <p>{language === 'cn' ? '还没有历史探索。' : 'No past explorations yet.'}</p>
+            {isListLoading ? (
+              <div className="detail-skeleton-list" aria-label={language === 'cn' ? '正在加载历史探索' : 'Loading exploration history'}>
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : explorations.length === 0 ? (
+              <div className="detail-empty-state">
+                <strong>{language === 'cn' ? '还没有历史探索' : 'No past explorations yet'}</strong>
+                <p>{language === 'cn' ? '完成一次探索后，这里会自动出现可回看的记录。' : 'Completed explorations will appear here for review.'}</p>
+                <button type="button" onClick={() => goToStep('setup')}>{language === 'cn' ? '开始一次探索' : 'Start Exploring'}</button>
+              </div>
             ) : explorations.map((item, index) => (
               <button className={selectedExplorationId === item.id ? 'history-item history-item-active' : 'history-item'} type="button" key={item.id} onClick={() => void handleSelectExploration(item.id)}>
                 <strong>{language === 'cn' ? `探索 ${explorations.length - index}` : `Exploration ${explorations.length - index}`}</strong>
@@ -79,11 +100,22 @@ export function ExplorationHistoryPage() {
 
         <div className="history-detail-card">
           <span className="eyebrow">{language === 'cn' ? '探索详情' : 'Exploration Detail'}</span>
-          {explorationDetail ? (
+          {isDetailLoading ? (
+            <div className="detail-loading-state" aria-label={language === 'cn' ? '正在加载探索详情' : 'Loading exploration detail'}>
+              <div className="loading-orbit" />
+              <strong>{language === 'cn' ? '正在整理这次探索' : 'Preparing this exploration'}</strong>
+              <p>{language === 'cn' ? 'AB 回顾、镜像时刻和总结会在这里展开。' : 'AB review, mirror moments, and summaries will unfold here.'}</p>
+              <div className="detail-skeleton-grid">
+                <span />
+                <span />
+                <span />
+              </div>
+            </div>
+          ) : explorationDetail ? (
             <div className="history-detail-grid">
               <section>
                 <h3>{language === 'cn' ? '本次 AB 回顾' : 'AB Review'}</h3>
-                {explorationDetail.abInteractions.length === 0 ? <p>{language === 'cn' ? '暂无 AB 互动记录。' : 'No AB interactions yet.'}</p> : explorationDetail.abInteractions.map((item) => (
+                {explorationDetail.abInteractions.length === 0 ? <div className="detail-empty-state detail-empty-state-compact"><strong>{language === 'cn' ? '暂无 AB 互动' : 'No AB interactions'}</strong><p>{language === 'cn' ? '这次探索还没有保存问答记录。' : 'No saved question records for this exploration.'}</p></div> : explorationDetail.abInteractions.map((item) => (
                   <article className="history-mini-card" key={item.id}>
                     <strong>{item.question_text}</strong>
                     <p>A：{item.host_answer || '-'}</p>
@@ -93,7 +125,7 @@ export function ExplorationHistoryPage() {
               </section>
               <section>
                 <h3>{language === 'cn' ? '镜像时刻回放' : 'Mirror Replay'}</h3>
-                {explorationDetail.mirrorEvents.length === 0 ? <p>{language === 'cn' ? '暂无镜像时刻。' : 'No mirror events yet.'}</p> : explorationDetail.mirrorEvents.map((item) => (
+                {explorationDetail.mirrorEvents.length === 0 ? <div className="detail-empty-state detail-empty-state-compact"><strong>{language === 'cn' ? '暂无镜像时刻' : 'No mirror moments'}</strong><p>{language === 'cn' ? '本次探索没有触发镜像事件。' : 'No mirror event was triggered this time.'}</p></div> : explorationDetail.mirrorEvents.map((item) => (
                   <article className="history-mini-card" key={item.id}>
                     <strong>{item.title}</strong>
                     <p>{item.prompt}</p>
@@ -103,7 +135,7 @@ export function ExplorationHistoryPage() {
               </section>
               <section>
                 <h3>{language === 'cn' ? '总结库' : 'Summary Library'}</h3>
-                {explorationDetail.summaries.length === 0 ? <p>{language === 'cn' ? '暂无总结沉淀。' : 'No summaries yet.'}</p> : explorationDetail.summaries.map((item) => (
+                {explorationDetail.summaries.length === 0 ? <div className="detail-empty-state detail-empty-state-compact"><strong>{language === 'cn' ? '暂无总结' : 'No summary yet'}</strong><p>{language === 'cn' ? '结束探索后，总结会沉淀到这里。' : 'Summaries are saved here after an exploration ends.'}</p></div> : explorationDetail.summaries.map((item) => (
                   <article className="history-mini-card" key={item.id}>
                     <strong>{item.summary_text}</strong>
                     {readableList(item.highlights) && <p>{language === 'cn' ? '高光：' : 'Highlights: '}{readableList(item.highlights)}</p>}
@@ -113,7 +145,10 @@ export function ExplorationHistoryPage() {
               </section>
             </div>
           ) : (
-            <p>{language === 'cn' ? '选择一次历史探索查看详情。' : 'Select an exploration to view details.'}</p>
+            <div className="detail-empty-state">
+              <strong>{language === 'cn' ? '选择一次探索' : 'Select an exploration'}</strong>
+              <p>{language === 'cn' ? '左侧点开任意记录后，详情会在这里显示。' : 'Choose a record on the left to show its details here.'}</p>
+            </div>
           )}
         </div>
       </section>

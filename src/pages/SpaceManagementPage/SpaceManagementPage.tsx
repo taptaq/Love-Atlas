@@ -4,21 +4,10 @@ import { loadSpaceManagement, unbindPersistentSpace } from '../../features/sessi
 import { useSessionStore } from '../../features/session/useSessionStore';
 import { useSpaceStore } from '../../features/session/useSpaceStore';
 import { t } from '../../i18n';
+import { formatDate, presenceLabel } from '../../lib/format';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { useJourneyStore, useUiStore } from '../../store';
 import type { SpaceManagementResult } from '../../types/space';
-
-function formatDate(language: 'cn' | 'en', value: string | null) {
-  if (!value) return language === 'cn' ? '暂无' : 'Not yet';
-  return new Date(value).toLocaleString(language === 'cn' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function presenceLabel(language: 'cn' | 'en', value: string | null) {
-  if (!value) return language === 'cn' ? '未上线' : 'Never seen';
-  const minutes = Math.floor((Date.now() - new Date(value).getTime()) / 60000);
-  if (minutes < 2) return language === 'cn' ? '在线' : 'Online';
-  if (minutes < 10) return language === 'cn' ? '刚刚在线' : 'Recently online';
-  return language === 'cn' ? '离线' : 'Offline';
-}
 
 export function SpaceManagementPage() {
   const language = useUiStore((state) => state.language);
@@ -30,10 +19,16 @@ export function SpaceManagementPage() {
   const user = useAuthStore((state) => state.user);
   const [detail, setDetail] = useState<SpaceManagementResult | null>(null);
   const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUnbinding, setIsUnbinding] = useState(false);
 
   useEffect(() => {
-    if (!space) return;
-    void loadSpaceManagement(space.id).then(setDetail).catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to load space'));
+    if (!space) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    void loadSpaceManagement(space.id).then(setDetail).catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to load space')).finally(() => setIsLoading(false));
   }, [space]);
 
   const handleCopyInvite = async () => {
@@ -47,12 +42,19 @@ export function SpaceManagementPage() {
       setMessage(language === 'cn' ? '请先登录后再管理专属空间。' : 'Please sign in before managing this space.');
       return;
     }
-    const result = await unbindPersistentSpace(space.id, user.id);
-    if (result.space.status === 'unbound') {
-      clearSpace();
-      clearSession();
-      resetJourney();
-      goToStep('home');
+    setIsUnbinding(true);
+    try {
+      const result = await unbindPersistentSpace(space.id, user.id);
+      if (result.space.status === 'unbound') {
+        clearSpace();
+        clearSession();
+        resetJourney();
+        goToStep('home');
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : (language === 'cn' ? '解绑失败，请稍后重试' : 'Unbind failed, please try again'));
+    } finally {
+      setIsUnbinding(false);
     }
   };
 
@@ -70,6 +72,7 @@ export function SpaceManagementPage() {
 
   return (
     <main className="page flow-page space-management-page">
+      <LoadingOverlay visible={isLoading} message={language === 'cn' ? '正在加载空间状态…' : 'Loading space status…'} />
       <button className="back-link" type="button" onClick={() => goToStep('home')}>← {t(language, 'back')}</button>
       <section className="flow-header">
         <span className="step-pill">{language === 'cn' ? '空间管理' : 'Space Management'}</span>
@@ -85,18 +88,42 @@ export function SpaceManagementPage() {
           <button type="button" onClick={handleCopyInvite}>{language === 'cn' ? '复制邀请 ID' : 'Copy invite ID'}</button>
         </article>
 
+        {user && (
+          <article className="management-card">
+            <span className="eyebrow">{language === 'cn' ? '专属用户 ID' : 'Your User ID'}</span>
+            <strong className="user-id-display">{user.id}</strong>
+            {user.email && <p>{user.email}</p>}
+            <p>{language === 'cn' ? '这是你在专属关系空间中的身份标识，用于绑定与管理你创建的空间。' : 'This is your identity for private spaces, used to bind and manage spaces you create.'}</p>
+          </article>
+        )}
+
         <article className="management-card">
           <span className="eyebrow">{language === 'cn' ? '空间状态' : 'Space Status'}</span>
           <div className="management-stat-row"><span>{language === 'cn' ? '类型' : 'Type'}</span><strong>{space.type}</strong></div>
           <div className="management-stat-row"><span>{language === 'cn' ? '状态' : 'Status'}</span><strong>{space.status}</strong></div>
-          <div className="management-stat-row"><span>{language === 'cn' ? '探索次数' : 'Explorations'}</span><strong>{detail?.explorationCount ?? 0}</strong></div>
-          <div className="management-stat-row"><span>{language === 'cn' ? '最近探索' : 'Latest'}</span><strong>{formatDate(language, detail?.latestExploration?.created_at ?? null)}</strong></div>
+          {isLoading ? (
+            <div className="detail-skeleton-list detail-skeleton-list-compact" aria-label={language === 'cn' ? '正在加载空间状态' : 'Loading space status'}>
+              <span />
+              <span />
+            </div>
+          ) : (
+            <>
+              <div className="management-stat-row"><span>{language === 'cn' ? '探索次数' : 'Explorations'}</span><strong>{detail?.explorationCount ?? 0}</strong></div>
+              <div className="management-stat-row"><span>{language === 'cn' ? '最近探索' : 'Latest'}</span><strong>{formatDate(language, detail?.latestExploration?.created_at ?? null)}</strong></div>
+            </>
+          )}
         </article>
 
         <article className="management-card management-card-wide">
           <span className="eyebrow">{language === 'cn' ? '成员状态' : 'Members'}</span>
           <div className="member-list">
-            {(detail?.members ?? []).map((member) => (
+            {isLoading ? (
+              <div className="detail-loading-state detail-loading-state-inline" aria-label={language === 'cn' ? '正在加载成员状态' : 'Loading members'}>
+                <div className="loading-orbit" />
+                <strong>{language === 'cn' ? '正在同步成员状态' : 'Syncing member status'}</strong>
+                <p>{language === 'cn' ? '上线状态和加入时间会马上出现。' : 'Presence and join time will appear shortly.'}</p>
+              </div>
+            ) : (detail?.members ?? []).map((member) => (
               <div className="member-row" key={member.id}>
                 <strong>{member.role}</strong>
                 <span>{presenceLabel(language, member.last_seen_at)}</span>
@@ -104,7 +131,12 @@ export function SpaceManagementPage() {
                 <small>{language === 'cn' ? '最后在线：' : 'Last seen: '}{formatDate(language, member.last_seen_at)}</small>
               </div>
             ))}
-            {detail && detail.members.length === 0 && <p>{language === 'cn' ? '暂无成员记录。' : 'No member records yet.'}</p>}
+            {!isLoading && detail && detail.members.length === 0 && (
+              <div className="detail-empty-state detail-empty-state-compact">
+                <strong>{language === 'cn' ? '暂无成员记录' : 'No member records'}</strong>
+                <p>{language === 'cn' ? '对方加入后，会在这里看到成员与在线状态。' : 'Members and presence will appear after someone joins.'}</p>
+              </div>
+            )}
           </div>
         </article>
 
@@ -114,7 +146,7 @@ export function SpaceManagementPage() {
             <button type="button" onClick={() => goToStep('explorationHistory')}>{language === 'cn' ? '历史探索' : 'Exploration History'}</button>
             <button type="button" onClick={() => goToStep('world')}>{t(language, 'worldTitle')}</button>
             <button type="button" onClick={() => goToStep('spaceLibrary')}>{language === 'cn' ? '长期沉淀' : 'Long-term Library'}</button>
-            <button type="button" onClick={handleUnbind}>{language === 'cn' ? '解绑专属空间' : 'Unbind Space'}</button>
+            <button type="button" onClick={handleUnbind} disabled={isUnbinding}>{isUnbinding ? (language === 'cn' ? '解绑中…' : 'Unbinding…') : (language === 'cn' ? '解绑专属空间' : 'Unbind Space')}</button>
           </div>
           {message && <small>{message}</small>}
         </article>

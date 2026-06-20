@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { getGoalOption } from '../features/relationship/relationship.config';
+import { JOURNEY_PROGRESS_DELTA, SIMILARITY_THRESHOLD } from '../features/relationship/journeyConfig';
 import { getRecommendedRouteAreas } from '../features/relationship/routePlanner';
 import { generateABInsights, getMirrorSignal, calculateSimilarity } from '../services/abEngine';
 import { createMirrorEvent, generateRelationshipEvent } from '../services/eventEngine';
@@ -23,6 +24,13 @@ import type {
 } from '../types';
 
 const stepFlow: StepFlow[] = ['setup', 'goal', 'route', 'journey', 'summary'];
+
+// 完整步骤顺序（含侧边入口），用于同步时的步骤优先级判断
+// 主流程在前，侧边入口在后，避免对方在主流程时把本地从侧边入口拉回
+const SYNC_STEP_ORDER: StepFlow[] = [
+  'home', 'setup', 'goal', 'route', 'journey', 'event', 'summary',
+  'world', 'discoveryAtlas', 'explorationHistory', 'spaceManagement', 'spaceLibrary', 'mirrorEngine',
+];
 
 const defaultPresentMoment: PresentMomentState = {
   scene: '',
@@ -52,6 +60,8 @@ const defaultABAnswers: ABAnswers = {
   intensity: 'low',
   insights: null,
   revealVisible: false,
+  answerAReady: false,
+  answerBReady: false,
 };
 
 const defaultRoute: JourneyRoute = {
@@ -72,6 +82,9 @@ const defaultSummary: SummaryData = {
 export interface JourneyStoreState {
   currentStep: StepFlow;
   previousStepName: StepFlow | null;
+  // 标记用户是否手动返回了 home（区别于页面加载时的默认 home 状态）
+  // 手动返回 home 后，同步不应把用户拉回主流程步骤
+  isHomeManuallyNavigated: boolean;
   relationshipStage: RelationshipStage | null;
   goal: JourneyGoal | null;
   route: JourneyRoute;
@@ -106,8 +119,10 @@ interface JourneyStore extends JourneyStoreState {
   goToNextQuestion: () => void;
   endJourney: () => void;
   applyPresentMoment: (moment: Partial<PresentMomentState>) => void;
-  submitAnswerA: (answer: string) => void;
-  submitAnswerB: (answer: string) => void;
+  submitAnswerA: (answerA: string) => void;
+  submitAnswerB: (answerB: string) => void;
+  setAnswerAReady: (ready: boolean) => void;
+  setAnswerBReady: (ready: boolean) => void;
   unlockMirrorEvent: (mirrorEvent: MirrorEventState) => void;
   completeMirrorEvent: () => void;
   skipMirrorEvent: () => void;
@@ -122,6 +137,7 @@ interface JourneyStore extends JourneyStoreState {
 export const useJourneyStore = create<JourneyStore>((set, get) => ({
   currentStep: 'home',
   previousStepName: null,
+  isHomeManuallyNavigated: false,
   relationshipStage: null,
   goal: null,
   route: defaultRoute,
@@ -155,7 +171,7 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
       if (previousStepName) set({ currentStep: previousStepName });
     }
   },
-  goToStep: (step) => set((state) => ({ previousStepName: state.currentStep, currentStep: step })),
+  goToStep: (step) => set((state) => ({ previousStepName: state.currentStep, currentStep: step, isHomeManuallyNavigated: step === 'home' })),
   setRelationshipStage: (relationshipStage) => set((state) => {
     const goalOption = getGoalOption(state.goal);
     const routeAreas = getRecommendedRouteAreas(relationshipStage, state.goal);
@@ -248,7 +264,7 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
       abAnswers: {
         ...state.abAnswers,
         similarity,
-        intensity: similarity >= 55 ? 'high' : similarity >= 30 ? 'medium' : 'low',
+        intensity: similarity >= SIMILARITY_THRESHOLD.HIGH ? 'high' : similarity >= SIMILARITY_THRESHOLD.MEDIUM ? 'medium' : 'low',
         insights,
         revealVisible: true,
       },
@@ -267,13 +283,13 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
         currentRegion: state.currentQuestion.region,
         regionProgress: {
           ...state.worldState.regionProgress,
-          [state.currentQuestion.region]: Math.min(100, state.worldState.regionProgress[state.currentQuestion.region] + 18),
+          [state.currentQuestion.region]: Math.min(100, state.worldState.regionProgress[state.currentQuestion.region] + JOURNEY_PROGRESS_DELTA),
         },
-        regionStates: { ...state.worldState.regionStates, [state.currentQuestion.region]: similarity >= 55 ? 'bright' : 'growth' },
+        regionStates: { ...state.worldState.regionStates, [state.currentQuestion.region]: similarity >= SIMILARITY_THRESHOLD.HIGH ? 'bright' : 'growth' },
         visitedRegions: Array.from(new Set([...state.worldState.visitedRegions, state.currentQuestion.region])),
         worldChanges: [
           ...state.worldState.worldChanges,
-          { area: state.currentQuestion.region, message: state.currentQuestion.worldEffect?.message ?? insights.emotion, progressDelta: 18 },
+          { area: state.currentQuestion.region, message: state.currentQuestion.worldEffect?.message ?? insights.emotion, progressDelta: JOURNEY_PROGRESS_DELTA },
         ],
       },
     });
@@ -351,7 +367,7 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
       },
       stats,
       answers: { a: lastItem.answers.answerA, b: lastItem.answers.answerB },
-      guessMatched: lastItem.answers.similarity >= 55,
+      guessMatched: lastItem.answers.similarity >= SIMILARITY_THRESHOLD.HIGH,
     });
     saveStats(nextStats);
     saveWorldState(state.worldState);
@@ -394,6 +410,8 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
   }),
   submitAnswerA: (answerA) => set((state) => ({ abAnswers: { ...state.abAnswers, answerA } })),
   submitAnswerB: (answerB) => set((state) => ({ abAnswers: { ...state.abAnswers, answerB } })),
+  setAnswerAReady: (ready) => set((state) => ({ abAnswers: { ...state.abAnswers, answerAReady: ready } })),
+  setAnswerBReady: (ready) => set((state) => ({ abAnswers: { ...state.abAnswers, answerBReady: ready } })),
   unlockMirrorEvent: (mirrorEvent) => set({ mirrorEvent }),
   completeMirrorEvent: () => set((state) => ({ mirrorEvent: { ...state.mirrorEvent, active: false, completed: true } })),
   skipMirrorEvent: () => set((state) => ({ currentEvent: null, currentStep: 'journey', mirrorEvent: { ...state.mirrorEvent, active: false, skipped: true, unlocked: false } })),
@@ -408,10 +426,43 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
       abAnswers: defaultABAnswers,
     });
   },
-  hydrateSharedState: (sharedState) => set(sharedState),
+  hydrateSharedState: (sharedState) => set((state) => {
+    const incoming = { ...sharedState } as Partial<JourneyStoreState>;
+    // currentStep 只允许前进，不允许后退
+    // 避免对方还在上一页时把你也拉回去
+    const localStepIndex = SYNC_STEP_ORDER.indexOf(state.currentStep);
+    const incomingStepIndex = incoming.currentStep ? SYNC_STEP_ORDER.indexOf(incoming.currentStep) : -1;
+    // 用户手动返回 home 后，不应被对方主流程步骤拉回
+    // 页面加载时的默认 home（isHomeManuallyNavigated=false）允许正常恢复
+    const isLocalAtHome = state.currentStep === 'home' && state.isHomeManuallyNavigated;
+    if (isLocalAtHome || (incomingStepIndex >= 0 && incomingStepIndex < localStepIndex)) {
+      incoming.currentStep = state.currentStep;
+    }
+    // 智能合并 abAnswers：保留本地答案，只更新对方的答案和 ready 标识
+    if (incoming.abAnswers) {
+      const incomingAb = incoming.abAnswers;
+      const localAb = state.abAnswers;
+      // 如果已经揭晓，接受全部答案
+      if (incomingAb.revealVisible) {
+        incoming.abAnswers = { ...incomingAb };
+      } else {
+        // 未揭晓：保留本地答案文本，只同步 ready 标识
+        incoming.abAnswers = {
+          ...localAb,
+          answerAReady: incomingAb.answerAReady ?? localAb.answerAReady,
+          answerBReady: incomingAb.answerBReady ?? localAb.answerBReady,
+          // 如果对方同步了答案（双方都 ready 时），接受对方的答案
+          answerA: incomingAb.answerA || localAb.answerA,
+          answerB: incomingAb.answerB || localAb.answerB,
+        };
+      }
+    }
+    return incoming;
+  }),
   completeJourney: (summary) => set({ summary, currentStep: 'summary' }),
   resetJourney: () => set({
     currentStep: 'setup',
+    isHomeManuallyNavigated: false,
     relationshipStage: null,
     goal: null,
     route: defaultRoute,

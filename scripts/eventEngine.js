@@ -172,14 +172,6 @@ function generateEvent(context) {
     // 获取事件模板
     const template = EVENT_TEMPLATES[eventType];
 
-    // 调试输出
-    console.log('[Event Engine]', {
-        Region: region,
-        QuestionType: questionType,
-        EventType: eventType,
-        Title: template.title
-    });
-
     return {
         title: template.title,
         description: template.description,

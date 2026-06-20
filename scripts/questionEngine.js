@@ -586,16 +586,6 @@ function generateQuestion(journeyState) {
     // 3. 生成解释
     const reason = generateReason(stage, goal, moment, questionData.region);
 
-    // 4. 调试输出
-    console.log('[Question Engine]', {
-        Stage: stage,
-        Goal: goal,
-        Region: questionData.region,
-        Type: questionData.type,
-        Question: questionData.question,
-        Reason: reason
-    });
-
     return {
         region: questionData.region,
         question: questionData.question,

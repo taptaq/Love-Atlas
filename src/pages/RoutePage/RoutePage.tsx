@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { generateAiRoute } from '../../features/relationship/aiRouteService';
 import { mapAreaConfig } from '../../features/map/map.config';
 import { getMomentInfluence, inferImageTags } from '../../features/presentMoment/presentMomentEngine';
 import { getGoalOption, getStageOption } from '../../features/relationship/relationship.config';
+import { getRecommendedRouteAreas } from '../../features/relationship/routePlanner';
 import { uploadPresentMomentImage } from '../../features/session/storageService';
 import { useSessionStore } from '../../features/session/useSessionStore';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { useJourneyStore, useUiStore } from '../../store';
-import type { MomentScene } from '../../types';
+import type { MapArea, MomentScene } from '../../types';
 
 const scenes: Array<{ id: MomentScene; icon: string; cn: string; en: string }> = [
   { id: 'cafe', icon: '☕️', cn: '咖啡馆', en: 'Cafe' },
@@ -29,25 +32,70 @@ export function RoutePage() {
   const previousStep = useJourneyStore((state) => state.previousStep);
   const [momentText, setMomentText] = useState(presentMoment.text);
   const [activeMomentAction, setActiveMomentAction] = useState<MomentAction>('none');
+  const [appliedHint, setAppliedHint] = useState('');
+  const appliedHintTimer = useRef<number | undefined>(undefined);
+  const [aiRouteAreas, setAiRouteAreas] = useState<MapArea[] | null>(null);
+  const [aiRouteReason, setAiRouteReason] = useState('');
+  const [aiLoading, setAiLoading] = useState(true);
+  const [aiFallback, setAiFallback] = useState(false);
   const stage = getStageOption(relationshipStage);
   const goalOption = getGoalOption(goal);
-  const routeAreas = route.areas.length > 0 ? route.areas : goalOption ? [goalOption.primaryArea] : [];
-  const routeReason = typeof route.reason === 'string' ? route.reason : route.reason?.[language];
+
+  // AI 生成路线，失败时用固定组合兜底
+  useEffect(() => {
+    let cancelled = false;
+    setAiLoading(true);
+    generateAiRoute({ stage: relationshipStage, goal, language })
+      .then((result) => {
+        if (cancelled) return;
+        setAiRouteAreas(result.areas);
+        setAiRouteReason(result.reason);
+        setAiFallback(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // 兜底：使用固定组合
+        const fallbackAreas = getRecommendedRouteAreas(relationshipStage, goal);
+        setAiRouteAreas(fallbackAreas);
+        setAiRouteReason('');
+        setAiFallback(true);
+      })
+      .finally(() => {
+        if (!cancelled) setAiLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(appliedHintTimer.current);
+    };
+  }, [relationshipStage, goal, language]);
+
+  const routeAreas = aiRouteAreas ?? (route.areas.length > 0 ? route.areas : goalOption ? [goalOption.primaryArea] : []);
+  const routeReason = aiRouteReason || (typeof route.reason === 'string' ? route.reason : route.reason?.[language]);
+
+  const showAppliedHint = (message: string) => {
+    setAppliedHint(message);
+    window.clearTimeout(appliedHintTimer.current);
+    appliedHintTimer.current = window.setTimeout(() => setAppliedHint(''), 2000);
+  };
 
   const applyMoment = (scene: MomentScene) => {
     const routeInfluence = getMomentInfluence(scene, momentText, presentMoment.imageTags);
     applyPresentMoment({ scene, text: momentText, routeInfluence });
+    showAppliedHint(language === 'cn' ? '场景已应用' : 'Scene applied');
   };
 
   const applyTextMoment = () => {
+    if (!momentText.trim()) return;
     const routeInfluence = getMomentInfluence(presentMoment.scene, momentText, presentMoment.imageTags);
     applyPresentMoment({ text: momentText, routeInfluence });
+    showAppliedHint(language === 'cn' ? '句子已应用' : 'Note applied');
   };
 
   const skipMoment = () => {
     setActiveMomentAction('none');
     setMomentText('');
     applyPresentMoment({ scene: '', text: '', image: null, imagePreview: '', imageTags: [], captureMode: null, routeInfluence: null });
+    showAppliedHint(language === 'cn' ? '已跳过此刻信息' : 'Moment skipped');
   };
 
   const handleImageUpload = (file: File | undefined) => {
@@ -71,15 +119,17 @@ export function RoutePage() {
         captureMode: 'upload',
         routeInfluence,
       });
+      showAppliedHint(language === 'cn' ? '图片已应用' : 'Image applied');
     };
     reader.readAsDataURL(file);
   };
 
   return (
     <main className="page flow-page">
+      <LoadingOverlay visible={aiLoading} message={language === 'cn' ? 'AI 正在生成你们今天的路线…' : 'AI is generating today\u2019s route…'} />
       <section className="flow-header">
         <span className="step-pill">03 / {language === 'cn' ? '路线引擎' : 'Route Engine'}</span>
-        <h1>{language === 'cn' ? 'AI 正在生成你们今天的路线' : 'AI is generating today’s route'}</h1>
+        <h1>{aiLoading ? (language === 'cn' ? 'AI 正在生成你们今天的路线…' : 'AI is generating today\u2019s route…') : (language === 'cn' ? 'AI 已生成你们今天的路线' : 'AI has generated today\u2019s route')}</h1>
         <p>{language === 'cn' ? '关系阶段、探索目标和此刻场景会共同影响路线。' : 'Stage, goal, and present moment jointly shape the route.'}</p>
       </section>
 
@@ -98,17 +148,26 @@ export function RoutePage() {
 
       <section className="route-preview-card recommended-route-card">
         <span className="eyebrow">{language === 'cn' ? '推荐路线' : 'Recommended Route'}</span>
-        <h2>{routeAreas.map((area) => `${mapAreaConfig[area].icon} ${mapAreaConfig[area].label[language]}`).join(' → ')}</h2>
-        <p>{routeReason || goalOption?.routeReason[language] || (language === 'cn' ? 'AI 会根据关系阶段和探索目标生成今天的路线。' : 'AI generates today’s route from your relationship stage and goal.')}</p>
-        <div className="route-node-list">
-          {routeAreas.map((area) => (
-            <div className="route-node" key={area}>
-              <span>{mapAreaConfig[area].icon}</span>
-              <strong>{mapAreaConfig[area].label[language]}</strong>
-              <small>{mapAreaConfig[area].description[language]}</small>
-            </div>
-          ))}
-        </div>
+        {aiLoading ? (
+          <h2>{language === 'cn' ? '⏳ AI 生成中…' : '⏳ AI generating…'}</h2>
+        ) : (
+          <h2>{routeAreas.map((area) => `${mapAreaConfig[area].icon} ${mapAreaConfig[area].label[language]}`).join(' → ')}</h2>
+        )}
+        <p>{routeReason || goalOption?.routeReason[language] || (language === 'cn' ? 'AI 会根据关系阶段和探索目标生成今天的路线。' : 'AI generates today\u2019s route from your relationship stage and goal.')}</p>
+        {aiFallback && !aiLoading && (
+          <p className="ai-fallback-hint">{language === 'cn' ? '⚠️ AI 暂不可用，已使用默认路线' : '⚠️ AI unavailable, using default route'}</p>
+        )}
+        {!aiLoading && (
+          <div className="route-node-list">
+            {routeAreas.map((area) => (
+              <div className="route-node" key={area}>
+                <span>{mapAreaConfig[area].icon}</span>
+                <strong>{mapAreaConfig[area].label[language]}</strong>
+                <small>{mapAreaConfig[area].description[language]}</small>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="route-preview-card present-moment-card">
@@ -157,6 +216,7 @@ export function RoutePage() {
               value={momentText}
               onChange={(event) => setMomentText(event.target.value)}
               placeholder={language === 'cn' ? '此刻你们在哪里？刚刚发生了什么？' : 'Where are you now? What just happened?'}
+              aria-label={language === 'cn' ? '此刻信息' : 'Present moment note'}
             />
             <button className="primary-btn" disabled={!momentText.trim()} type="button" onClick={applyTextMoment}>
               {language === 'cn' ? '应用这句话' : 'Apply this note'}
@@ -184,6 +244,9 @@ export function RoutePage() {
         )}
         {presentMoment.routeInfluence && (
           <p className="moment-effect">{presentMoment.routeInfluence.reason}</p>
+        )}
+        {appliedHint && (
+          <p className="moment-applied-hint">{appliedHint}</p>
         )}
       </section>
 

@@ -1,8 +1,11 @@
 import { useEffect } from 'react';
+import { AuthButton } from '../components/auth/AuthButton';
 import { LanguageToggle } from '../components/ui/LanguageToggle';
 import { useAuthStore } from '../features/auth/useAuthStore';
 import { useRelationshipSessionSync } from '../features/session/useRelationshipSessionSync';
 import { useSpacePresenceHeartbeat } from '../features/session/useSpacePresenceHeartbeat';
+import { useSpacePresenceMonitor } from '../features/session/useSpacePresenceMonitor';
+import { ErrorBoundary } from '../components/layout/ErrorBoundary';
 import { StarBackground } from '../components/layout/StarBackground';
 import { DiscoveryAtlasPage } from '../pages/DiscoveryAtlasPage/DiscoveryAtlasPage';
 import { EventPage } from '../pages/EventPage/EventPage';
@@ -51,6 +54,7 @@ function renderPage(step: ReturnType<typeof useJourneyStore.getState>['currentSt
 export function App() {
   useRelationshipSessionSync();
   useSpacePresenceHeartbeat();
+  useSpacePresenceMonitor();
   const currentStep = useJourneyStore((state) => state.currentStep);
   const initializeAuth = useAuthStore((state) => state.initialize);
 
@@ -62,7 +66,8 @@ export function App() {
     <div className="app-shell">
       <StarBackground />
       <LanguageToggle />
-      {renderPage(currentStep)}
+      <AuthButton />
+      <ErrorBoundary>{renderPage(currentStep)}</ErrorBoundary>
     </div>
   );
 }

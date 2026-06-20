@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createEventCompletionMessage } from '../../services/eventEngine';
 import { useJourneyStore, useUiStore } from '../../store';
 
@@ -34,6 +34,11 @@ export function EventPage() {
   const [reflection, setReflection] = useState('');
   const isMirrorEvent = currentEvent?.type === 'mirror';
   const [introVisible, setIntroVisible] = useState(isMirrorEvent);
+
+  // 当事件类型变化时同步 introVisible
+  useEffect(() => {
+    setIntroVisible(isMirrorEvent);
+  }, [isMirrorEvent]);
 
   if (!currentEvent) {
     return (
@@ -111,6 +116,7 @@ export function EventPage() {
             value={reflection}
             onChange={(event) => setReflection(event.target.value)}
             placeholder={language === 'cn' ? '试着写一句：我听见你可能在说…… / 我真正想表达的是……' : 'Try one sentence: I hear you may be saying... / What I truly meant was...'}
+            aria-label={language === 'cn' ? '反思记录' : 'Reflection'}
           />
         </section>
       )}

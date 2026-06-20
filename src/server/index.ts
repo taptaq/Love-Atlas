@@ -3,6 +3,7 @@ import { stat } from 'node:fs/promises';
 import { createServer, type ServerResponse } from 'node:http';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { handleAiRouteApi } from './aiRouteService';
 import { handleSessionApi } from './sessionApi';
 import { handleSpaceApi } from './spaceApi';
 
@@ -33,7 +34,7 @@ async function serveStatic(pathname: string, response: ServerResponse) {
 }
 
 createServer(async (request, response) => {
-  const handled = (await handleSpaceApi(request, response)) || (await handleSessionApi(request, response));
+  const handled = (await handleAiRouteApi(request, response)) || (await handleSpaceApi(request, response)) || (await handleSessionApi(request, response));
   if (handled) return;
 
   try {

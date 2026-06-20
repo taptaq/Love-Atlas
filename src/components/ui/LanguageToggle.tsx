@@ -5,7 +5,12 @@ export function LanguageToggle() {
   const toggleLanguage = useUiStore((state) => state.toggleLanguage);
 
   return (
-    <button className="language-toggle" onClick={toggleLanguage} type="button">
+    <button
+      className="language-toggle"
+      onClick={toggleLanguage}
+      type="button"
+      aria-label={language === 'cn' ? '切换语言' : 'Switch language'}
+    >
       <span className={language === 'cn' ? 'active' : ''}>中文</span>
       <span>/</span>
       <span className={language === 'en' ? 'active' : ''}>EN</span>

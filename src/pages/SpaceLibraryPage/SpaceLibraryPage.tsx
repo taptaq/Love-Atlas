@@ -2,16 +2,10 @@ import { useEffect, useState } from 'react';
 import { loadSpaceLibrary } from '../../features/session/spaceService';
 import { useSpaceStore } from '../../features/session/useSpaceStore';
 import { t } from '../../i18n';
+import { formatDate, readableList } from '../../lib/format';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { useJourneyStore, useUiStore } from '../../store';
 import type { SpaceLibraryResult } from '../../types/space';
-
-function formatDate(language: 'cn' | 'en', value: string) {
-  return new Date(value).toLocaleString(language === 'cn' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function readableList(value: unknown) {
-  return Array.isArray(value) ? value.filter(Boolean).join(' · ') : '';
-}
 
 export function SpaceLibraryPage() {
   const language = useUiStore((state) => state.language);
@@ -19,14 +13,20 @@ export function SpaceLibraryPage() {
   const space = useSpaceStore((state) => state.space);
   const [library, setLibrary] = useState<SpaceLibraryResult>({ discoveries: [], summaries: [] });
   const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!space) return;
-    void loadSpaceLibrary(space.id).then(setLibrary).catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to load library'));
+    if (!space) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    void loadSpaceLibrary(space.id).then(setLibrary).catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to load library')).finally(() => setIsLoading(false));
   }, [space]);
 
   return (
     <main className="page flow-page space-library-page">
+      <LoadingOverlay visible={isLoading} message={language === 'cn' ? '正在加载沉淀库…' : 'Loading library…'} />
       <button className="back-link" type="button" onClick={() => goToStep('home')}>← {t(language, 'back')}</button>
       <section className="flow-header">
         <span className="step-pill">{language === 'cn' ? '长期沉淀' : 'Long-term Library'}</span>
@@ -39,7 +39,13 @@ export function SpaceLibraryPage() {
       <section className="library-grid">
         <article className="library-column">
           <span className="eyebrow">{language === 'cn' ? '发现库' : 'Discoveries'}</span>
-          {library.discoveries.length === 0 ? (
+          {isLoading ? (
+            <div className="detail-skeleton-list" aria-label={language === 'cn' ? '正在加载发现库' : 'Loading discoveries'}>
+              <span />
+              <span />
+              <span />
+            </div>
+          ) : library.discoveries.length === 0 ? (
             <p>{language === 'cn' ? '暂无长期发现。完成更多探索后会出现在这里。' : 'No discoveries yet. Complete more explorations to fill this space.'}</p>
           ) : library.discoveries.map((item) => (
             <div className="library-card" key={item.id}>
@@ -53,7 +59,13 @@ export function SpaceLibraryPage() {
 
         <article className="library-column">
           <span className="eyebrow">{language === 'cn' ? '总结库' : 'Summaries'}</span>
-          {library.summaries.length === 0 ? (
+          {isLoading ? (
+            <div className="detail-skeleton-list" aria-label={language === 'cn' ? '正在加载总结库' : 'Loading summaries'}>
+              <span />
+              <span />
+              <span />
+            </div>
+          ) : library.summaries.length === 0 ? (
             <p>{language === 'cn' ? '暂无长期总结。每次探索结束后会逐步沉淀。' : 'No summaries yet. They will accumulate after completed explorations.'}</p>
           ) : library.summaries.map((item) => (
             <div className="library-card" key={item.id}>

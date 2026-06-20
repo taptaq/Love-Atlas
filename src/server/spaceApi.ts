@@ -552,12 +552,20 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
 
     if (request.method === 'POST' && request.url === '/api/spaces/heartbeat') {
       const spaceId = String(body.spaceId ?? '');
-      const userId = requireUserId(authUser, String(body.userId ?? '') || undefined);
+      const userId = resolveUserId(authUser, String(body.userId ?? '') || undefined);
+      const participantId = String(body.participantId ?? '') || undefined;
+      // 重新激活成员（包括 left 状态，支持页面刷新后恢复在线状态）
       const updated = await prisma.relationshipSpaceMember.updateMany({
-        where: { spaceId, userId, status: 'active' },
-        data: { lastSeenAt: new Date() },
+        where: {
+          spaceId,
+          OR: [
+            ...(userId ? [{ userId }] : []),
+            ...(participantId ? [{ participantId }] : []),
+          ],
+        },
+        data: { status: 'active', lastSeenAt: new Date() },
       });
-      if (updated.count === 0) throw new Error('Only active space members can update presence');
+      if (updated.count === 0) throw new Error('Only space members can update presence');
       sendJson(response, 200, { ok: true });
       return true;
     }
@@ -587,6 +595,62 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
       }, { maxWait: 10000, timeout: 20000 });
 
       sendJson(response, 200, { space: normalizeSpace(updatedSpace) });
+      return true;
+    }
+
+    if (request.method === 'POST' && request.url === '/api/spaces/leave') {
+      const spaceId = String(body.spaceId ?? '');
+      const userId = resolveUserId(authUser, String(body.userId ?? '') || undefined);
+      const participantId = String(body.participantId ?? '') || undefined;
+      const space = await prisma.relationshipSpace.findUnique({
+        where: { id: spaceId },
+        include: { members: { where: { status: 'active' } }, explorations: { select: { id: true, legacySessionId: true } } },
+      });
+      if (!space) throw new Error('Space not found');
+      const leavingMember = space.members.find((member) => member.userId === userId || member.participantId === participantId);
+      if (!leavingMember) throw new Error('Only active space members can leave this space');
+
+      const remainingActive = space.members.length - 1;
+
+      await prisma.$transaction(async (transaction) => {
+        // 仅标记离开的成员为 left，不影响其他成员
+        await transaction.relationshipSpaceMember.update({
+          where: { id: leavingMember.id },
+          data: { status: 'left', leftAt: new Date() },
+        });
+
+        if (remainingActive <= 0) {
+          // 所有成员都已离开
+          if (space.type === 'temporary') {
+            // 临时空间：直接销毁所有数据库记录
+            // 先收集 legacy session IDs（RelationshipSpace 删除后 ExplorationSession 也会被级联删除，legacySessionId 会变 null）
+            const legacySessionIds = space.explorations
+              .map((e) => e.legacySessionId)
+              .filter((id): id is string => Boolean(id));
+
+            // 删除 RelationshipSpace（级联删除 members, explorations, exploration states, abInteractions, mirrorEvents, presentMoments, mapStates, discoveries, summaries）
+            await transaction.relationshipSpace.delete({ where: { id: space.id } });
+
+            // 手动删除 legacy Session 记录（Session 表不会被 RelationshipSpace 级联删除）
+            // Session 删除后会级联删除 SessionState, SessionParticipant, SessionFlowProgress 等
+            if (legacySessionIds.length > 0) {
+              await transaction.session.deleteMany({ where: { id: { in: legacySessionIds } } });
+            }
+          } else {
+            // 专属空间：标记为 archived（保留历史记录）
+            await transaction.relationshipSpace.update({ where: { id: space.id }, data: { status: 'archived' } });
+            await transaction.explorationSession.updateMany({
+              where: { spaceId: space.id, status: { in: ['draft', 'active'] } },
+              data: { status: 'abandoned', completedAt: new Date() },
+            });
+          }
+        } else {
+          // 还有成员在场，空间回到 waiting 状态（等待新成员加入）
+          await transaction.relationshipSpace.update({ where: { id: space.id }, data: { status: 'waiting' } });
+        }
+      }, { maxWait: 10000, timeout: 20000 });
+
+      sendJson(response, 200, { ok: true });
       return true;
     }
 
