@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { requestAuthPopover } from '../../components/auth/AuthButton';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { getDiscoveryCopy } from '../../features/discovery/discoveryI18n';
 import { useAuthStore } from '../../features/auth/useAuthStore';
-import { createPersistentExploration, createPersistentSpace, createTemporarySpace, joinRelationshipSpace, leaveSpace, loadExplorationSharedState, listSpaceExplorations, loadSpaceManagement, unbindPersistentSpace, upgradeTemporarySpace } from '../../features/session/spaceService';
+import { createPersistentExploration, createPersistentSpace, createTemporarySpace, joinRelationshipSpace, leaveSpace, loadExplorationSharedState, listSpaceExplorations, unbindPersistentSpace, upgradeTemporarySpace } from '../../features/session/spaceService';
 import { useSessionStore } from '../../features/session/useSessionStore';
 import { useSpaceStore } from '../../features/session/useSpaceStore';
 import { selectRelationshipSharedState } from '../../features/session/useRelationshipSessionSync';
@@ -10,7 +11,7 @@ import { t } from '../../i18n';
 import { useDiscoveryStore, useJourneyStore, useUiStore } from '../../store';
 import type { ExplorationSession, SpaceApiResult } from '../../types/space';
 
-export function HomePage() {
+export function HomePage({ memberCount }: { memberCount: number }) {
   const language = useUiStore((state) => state.language);
   const goToStep = useJourneyStore((state) => state.goToStep);
   const resetJourney = useJourneyStore((state) => state.resetJourney);
@@ -37,8 +38,8 @@ export function HomePage() {
   const [explorations, setExplorations] = useState<ExplorationSession[]>([]);
   const [explorationsLoading, setExplorationsLoading] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
-  const [memberCount, setMemberCount] = useState(0);
   const [summaryNotice, setSummaryNotice] = useState('');
+  const [spaceAction, setSpaceAction] = useState<'creating' | 'leaving' | null>(null);
   const hasSpace = Boolean(space && session);
   const isTemporarySpace = space?.type === 'temporary';
   const isPersistentSpace = space?.type === 'persistent';
@@ -70,27 +71,6 @@ export function HomePage() {
     }
   };
 
-  const refreshMemberStatus = async (spaceId: string) => {
-    try {
-      const detail = await loadSpaceManagement(spaceId);
-      setMemberCount(detail.members.filter((member) => member.status === 'active').length);
-    } catch {
-      // 忽略轮询错误，保持上次状态
-    }
-  };
-
-  useEffect(() => {
-    if (!space) {
-      setMemberCount(0);
-      return;
-    }
-    void refreshMemberStatus(space.id);
-    const timer = window.setInterval(() => {
-      void refreshMemberStatus(space.id);
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, [space?.id]);
-
   const handleOpenHistory = () => {
     if (!space || space.type !== 'persistent') return;
     if (explorations[0]) {
@@ -103,6 +83,7 @@ export function HomePage() {
     try {
       resetJourney();
       goToStep('home');
+      setSpaceAction('creating');
       setSpaceConnecting();
       setSessionConnecting();
       const result = await createTemporarySpace(selectRelationshipSharedState(useJourneyStore.getState()));
@@ -111,6 +92,8 @@ export function HomePage() {
       const message = error instanceof Error ? error.message : 'Unable to create temporary space';
       setSpaceError(message);
       setSessionError(message);
+    } finally {
+      setSpaceAction(null);
     }
   };
 
@@ -123,6 +106,7 @@ export function HomePage() {
     try {
       resetJourney();
       goToStep('home');
+      setSpaceAction('creating');
       setSpaceConnecting();
       setSessionConnecting();
       const result = await createPersistentSpace(selectRelationshipSharedState(useJourneyStore.getState()), authUser.id);
@@ -131,6 +115,8 @@ export function HomePage() {
       const message = error instanceof Error ? error.message : 'Unable to create persistent space';
       setSpaceError(message);
       setSessionError(message);
+    } finally {
+      setSpaceAction(null);
     }
   };
 
@@ -209,6 +195,7 @@ export function HomePage() {
   const handleUnbindSpace = async () => {
     if (!space || !authUser) return;
     try {
+      setSpaceAction('leaving');
       setSpaceConnecting();
       const result = await unbindPersistentSpace(space.id, authUser.id);
       if (result.space.status === 'unbound') {
@@ -222,6 +209,8 @@ export function HomePage() {
       const message = error instanceof Error ? error.message : 'Unable to unbind space';
       setSpaceError(message);
       setSessionError(message);
+    } finally {
+      setSpaceAction(null);
     }
   };
 
@@ -233,6 +222,8 @@ export function HomePage() {
   };
 
   const handleLeaveTemporarySpace = async () => {
+    setSpaceAction('leaving');
+    setSpaceConnecting();
     if (space) {
       try {
         await leaveSpace(space.id, authUser?.id);
@@ -246,6 +237,7 @@ export function HomePage() {
     setSpaceError('');
     setSessionError('');
     goToStep('home');
+    setSpaceAction(null);
   };
 
   const handleViewSummary = () => {
@@ -269,6 +261,12 @@ export function HomePage() {
 
   return (
     <main className="page home-page space-home-page">
+      <LoadingOverlay
+        visible={spaceStatus === 'connecting'}
+        message={spaceAction === 'leaving'
+          ? (language === 'cn' ? '正在离开空间…' : 'Leaving space…')
+          : (language === 'cn' ? '正在创建空间…' : 'Creating space…')}
+      />
       <section className="space-hero">
         <span className="step-pill">Relationship OS</span>
         <h1>Love Atlas</h1>
@@ -338,10 +336,12 @@ export function HomePage() {
                 <button className="create-option-btn create-option-temporary" type="button" onClick={handleCreateTemporarySpace} disabled={spaceStatus === 'connecting'}>
                   <span className="create-option-title">{language === 'cn' ? '创建临时探索空间' : 'Create Temporary Space'}</span>
                   <span className="create-option-desc">{language === 'cn' ? '一次性轻量探索，适合初识或默契测试' : 'One-time lightweight exploration for first connections'}</span>
+                  <span className="create-option-audience">{language === 'cn' ? '推荐：初次约会、暧昧期、想轻松破冰的情侣' : 'Best for: first dates, early-stage connections, or light icebreakers'}</span>
                 </button>
                 <button className="create-option-btn create-option-persistent" type="button" onClick={handleCreatePersistentSpace} disabled={spaceStatus === 'connecting'}>
                   <span className="create-option-title">{language === 'cn' ? '创建专属关系空间' : 'Create Private Space'}</span>
                   <span className="create-option-desc">{language === 'cn' ? '长期沉淀地图、发现与总结，需要登录' : 'Long-term maps, discoveries, and summaries (sign-in required)'}</span>
+                  <span className="create-option-audience">{language === 'cn' ? '推荐：稳定伴侣、夫妻共同探索、长期关系成长' : 'Best for: steady partners, couples, and long-term relationship growth'}</span>
                 </button>
               </div>
 

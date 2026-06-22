@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useJourneyStore } from '../../store';
+import { useJourneyStore, useUiStore } from '../../store';
 import type { JourneyStoreState } from '../../store/useJourneyStore';
 import type { RelationshipSharedState } from '../../types/session';
 import { loadRelationshipSharedState, saveRelationshipSharedState } from './sessionService';
@@ -77,7 +77,8 @@ export function useRelationshipSessionSync() {
           activityRef.current += 1;
         }
       } catch {
-        // 忽略初始同步错误
+        // 初始同步失败，标记错误状态
+        useUiStore.getState().setSyncStatus('error');
       }
     };
     void initialSync();
@@ -100,10 +101,13 @@ export function useRelationshipSessionSync() {
       const sharedState = pendingSaveRef.current;
       pendingSaveRef.current = null;
       savingRef.current = true;
+      useUiStore.getState().setSyncStatus('syncing');
       try {
         await saveRelationshipSharedState(sessionId, sharedState);
+        useUiStore.getState().setSyncStatus(navigator.onLine ? 'online' : 'offline');
       } catch {
         if (!pendingSaveRef.current) pendingSaveRef.current = sharedState;
+        useUiStore.getState().setSyncStatus('error');
       } finally {
         savingRef.current = false;
       }
@@ -115,10 +119,13 @@ export function useRelationshipSessionSync() {
       const sharedState = pendingSaveRef.current;
       pendingSaveRef.current = null;
       savingRef.current = true;
+      useUiStore.getState().setSyncStatus('syncing');
       try {
         await saveRelationshipSharedState(sessionId, sharedState);
+        useUiStore.getState().setSyncStatus(navigator.onLine ? 'online' : 'offline');
       } catch {
         if (!pendingSaveRef.current) pendingSaveRef.current = sharedState;
+        useUiStore.getState().setSyncStatus('error');
       } finally {
         savingRef.current = false;
       }
@@ -171,7 +178,8 @@ export function useRelationshipSessionSync() {
             }
           }
         } catch {
-          // 忽略轮询错误
+          // 轮询失败，标记错误状态
+          useUiStore.getState().setSyncStatus('error');
         }
         nextDelay = activityRef.current > 0 || wasActive ? 300 : 2000;
         poll();
@@ -187,12 +195,20 @@ export function useRelationshipSessionSync() {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // 5. 离线/在线检测
+    const handleOnline = () => useUiStore.getState().setSyncStatus('online');
+    const handleOffline = () => useUiStore.getState().setSyncStatus('offline');
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     return () => {
       unsubscribe();
       window.clearInterval(saveTimer);
       if (channel && supabase) void supabase.removeChannel(channel);
       if (pollTimeoutId !== undefined) window.clearTimeout(pollTimeoutId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, [sessionId, explorationId]);
 }

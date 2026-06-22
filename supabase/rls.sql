@@ -244,7 +244,7 @@ with check (bucket_id = 'present-moment');
 drop policy if exists "present-moment-read" on storage.objects;
 create policy "present-moment-read"
 on storage.objects for select
-to public
+to authenticated
 using (bucket_id = 'present-moment');
 
 drop policy if exists "present-moment-delete-owner" on storage.objects;

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { AuthButton } from '../components/auth/AuthButton';
 import { LanguageToggle } from '../components/ui/LanguageToggle';
+import { SyncStatusIndicator } from '../components/ui/SyncStatusIndicator';
 import { useAuthStore } from '../features/auth/useAuthStore';
 import { useRelationshipSessionSync } from '../features/session/useRelationshipSessionSync';
 import { useSpacePresenceHeartbeat } from '../features/session/useSpacePresenceHeartbeat';
@@ -19,9 +20,9 @@ import { SpaceManagementPage } from '../pages/SpaceManagementPage/SpaceManagemen
 import { SpaceLibraryPage } from '../pages/SpaceLibraryPage/SpaceLibraryPage';
 import { SummaryPage } from '../pages/SummaryPage/SummaryPage';
 import { WorldPage } from '../pages/WorldPage/WorldPage';
-import { useJourneyStore } from '../store';
+import { useJourneyStore, useUiStore } from '../store';
 
-function renderPage(step: ReturnType<typeof useJourneyStore.getState>['currentStep']) {
+function renderPage(step: ReturnType<typeof useJourneyStore.getState>['currentStep'], memberCount: number) {
   switch (step) {
     case 'setup':
       return <SetupPage />;
@@ -47,27 +48,55 @@ function renderPage(step: ReturnType<typeof useJourneyStore.getState>['currentSt
       return <SpaceLibraryPage />;
     case 'home':
     default:
-      return <HomePage />;
+      return <HomePage memberCount={memberCount} />;
   }
 }
 
 export function App() {
   useRelationshipSessionSync();
   useSpacePresenceHeartbeat();
-  useSpacePresenceMonitor();
+  const memberCount = useSpacePresenceMonitor();
   const currentStep = useJourneyStore((state) => state.currentStep);
+  const language = useUiStore((state) => state.language);
   const initializeAuth = useAuthStore((state) => state.initialize);
+  const cn = language === 'cn';
 
   useEffect(() => {
     void initializeAuth();
   }, [initializeAuth]);
 
+  useEffect(() => {
+    const titles: Record<string, { cn: string; en: string }> = {
+      home: { cn: 'Love Atlas · 爱的地图', en: 'Love Atlas' },
+      setup: { cn: '关系阶段 · Love Atlas', en: 'Setup · Love Atlas' },
+      goal: { cn: '探索目标 · Love Atlas', en: 'Goal · Love Atlas' },
+      route: { cn: '地图路线 · Love Atlas', en: 'Route · Love Atlas' },
+      journey: { cn: '探索旅程 · Love Atlas', en: 'Journey · Love Atlas' },
+      event: { cn: '镜像时刻 · Love Atlas', en: 'Mirror Event · Love Atlas' },
+      summary: { cn: '探索总结 · Love Atlas', en: 'Summary · Love Atlas' },
+      world: { cn: '关系世界 · Love Atlas', en: 'World · Love Atlas' },
+      discoveryAtlas: { cn: '发现图鉴 · Love Atlas', en: 'Discovery Atlas · Love Atlas' },
+      explorationHistory: { cn: '历史探索 · Love Atlas', en: 'Exploration History · Love Atlas' },
+      spaceManagement: { cn: '空间管理 · Love Atlas', en: 'Space Management · Love Atlas' },
+      spaceLibrary: { cn: '沉淀库 · Love Atlas', en: 'Space Library · Love Atlas' },
+      mirrorEngine: { cn: '镜像引擎 · Love Atlas', en: 'Mirror Engine · Love Atlas' },
+    };
+    const title = titles[currentStep] ?? titles.home;
+    document.title = cn ? title.cn : title.en;
+  }, [currentStep, cn]);
+
   return (
     <div className="app-shell">
+      <a href="#main-content" className="skip-link">{cn ? '跳到主要内容' : 'Skip to content'}</a>
       <StarBackground />
-      <LanguageToggle />
-      <AuthButton />
-      <ErrorBoundary>{renderPage(currentStep)}</ErrorBoundary>
+      <header className="app-header">
+        <LanguageToggle />
+        <AuthButton />
+      </header>
+      <SyncStatusIndicator />
+      <main id="main-content">
+        <ErrorBoundary>{renderPage(currentStep, memberCount)}</ErrorBoundary>
+      </main>
     </div>
   );
 }

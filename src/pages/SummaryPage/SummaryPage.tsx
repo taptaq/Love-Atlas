@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { discoveryPool } from '../../features/discovery/discoveryPool';
 import { getDiscoveryCopy } from '../../features/discovery/discoveryI18n';
 import { mapAreaConfig } from '../../features/map/map.config';
@@ -11,16 +12,19 @@ export function SummaryPage() {
   const goToStep = useJourneyStore((state) => state.goToStep);
   const resetJourney = useJourneyStore((state) => state.resetJourney);
   const refreshDiscoveries = useDiscoveryStore((state) => state.refresh);
+  const [isLoading, setIsLoading] = useState(false);
   const discoveries = Array.from(new Set(summary.discoveries))
     .map((id) => discoveryPool.find((item) => item.id === id))
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   useEffect(() => {
-    refreshDiscoveries();
+    setIsLoading(true);
+    Promise.resolve(refreshDiscoveries()).finally(() => setIsLoading(false));
   }, [refreshDiscoveries]);
 
   return (
     <main className="page flow-page summary-page">
+      <LoadingOverlay visible={isLoading} message={language === 'cn' ? '加载中…' : 'Loading…'} />
       <section className="flow-header">
         <span className="step-pill">05 / {language === 'cn' ? '旅程总结' : 'Summary'}</span>
         <h1>{language === 'cn' ? '这次旅程留下了新的痕迹' : 'This journey left new traces'}</h1>

@@ -12,14 +12,19 @@ function loadLanguage(): Language {
   }
 }
 
+export type SyncStatus = 'online' | 'offline' | 'syncing' | 'error';
+
 interface UiStore {
   language: Language;
+  syncStatus: SyncStatus;
   toggleLanguage: () => void;
   setLanguage: (language: Language) => void;
+  setSyncStatus: (status: SyncStatus) => void;
 }
 
 export const useUiStore = create<UiStore>((set, get) => ({
   language: loadLanguage(),
+  syncStatus: 'online',
   toggleLanguage: () => {
     const language: Language = get().language === 'cn' ? 'en' : 'cn';
     try {
@@ -33,4 +38,5 @@ export const useUiStore = create<UiStore>((set, get) => ({
     } catch {}
     set({ language });
   },
+  setSyncStatus: (syncStatus) => set({ syncStatus }),
 }));

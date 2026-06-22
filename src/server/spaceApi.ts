@@ -54,6 +54,16 @@ function requireUserId(authUser: AuthUser | null, bodyUserId: string | undefined
   return userId;
 }
 
+// 校验临时空间成员身份：participantId 必须匹配空间中的活跃成员
+async function assertTemporarySpaceMember(spaceId: string, participantId: string | undefined) {
+  if (!participantId) throw new Error('Participant ID is required for temporary spaces');
+  const member = await prisma.relationshipSpaceMember.findFirst({
+    where: { spaceId, participantId, status: 'active' },
+    select: { id: true },
+  });
+  if (!member) throw new Error('You are not a member of this space');
+}
+
 function sendJson(response: ServerResponse, statusCode: number, body: unknown) {
   response.statusCode = statusCode;
   response.setHeader('content-type', 'application/json');
@@ -539,14 +549,29 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
     }
 
     if (request.method === 'GET' && request.url.startsWith('/api/spaces/explorations/')) {
-      const spaceId = decodeURIComponent(request.url.replace('/api/spaces/explorations/', ''));
+      const rawPath = request.url.replace('/api/spaces/explorations/', '');
+      const [spaceIdPart, queryPart] = rawPath.split('?');
+      const spaceId = decodeURIComponent(spaceIdPart);
       await assertCanReadSpace(spaceId, authUser);
-      const explorations = await prisma.explorationSession.findMany({
-        where: { spaceId },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
+      const params = new URLSearchParams(queryPart ?? '');
+      const page = Math.max(1, Number(params.get('page') ?? '1'));
+      const pageSize = Math.min(50, Math.max(1, Number(params.get('pageSize') ?? '20')));
+      const [explorations, total] = await Promise.all([
+        prisma.explorationSession.findMany({
+          where: { spaceId },
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        prisma.explorationSession.count({ where: { spaceId } }),
+      ]);
+      sendJson(response, 200, {
+        explorations: explorations.map(normalizeExploration),
+        total,
+        page,
+        pageSize,
+        hasMore: page * pageSize < total,
       });
-      sendJson(response, 200, { explorations: explorations.map(normalizeExploration) });
       return true;
     }
 

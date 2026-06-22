@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { discoveryPool } from '../../features/discovery/discoveryPool';
 import { mapAreaConfig } from '../../features/map/map.config';
 import { useDiscoveryStore, useJourneyStore, useUiStore } from '../../store';
@@ -31,14 +32,17 @@ export function WorldPage() {
   const stats = useDiscoveryStore((state) => state.stats);
   const atlasState = useDiscoveryStore((state) => state.state);
   const refreshDiscoveries = useDiscoveryStore((state) => state.refresh);
+  const [isLoading, setIsLoading] = useState(false);
   const discoveryProgress = Math.round((atlasState.unlocked.length / discoveryPool.length) * 100);
 
   useEffect(() => {
-    refreshDiscoveries();
+    setIsLoading(true);
+    Promise.resolve(refreshDiscoveries()).finally(() => setIsLoading(false));
   }, [refreshDiscoveries]);
 
   return (
     <main className="page flow-page world-page">
+      <LoadingOverlay visible={isLoading} message={language === 'cn' ? '加载中…' : 'Loading…'} />
       <button className="back-link" type="button" onClick={() => goToStep('home')}>← {language === 'cn' ? '返回' : 'Back'}</button>
 
       <section className="flow-header">

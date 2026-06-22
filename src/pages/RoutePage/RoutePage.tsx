@@ -38,6 +38,7 @@ export function RoutePage() {
   const [aiRouteReason, setAiRouteReason] = useState('');
   const [aiLoading, setAiLoading] = useState(true);
   const [aiFallback, setAiFallback] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const stage = getStageOption(relationshipStage);
   const goalOption = getGoalOption(goal);
 
@@ -100,6 +101,7 @@ export function RoutePage() {
 
   const handleImageUpload = (file: File | undefined) => {
     if (!file) return;
+    setImageUploading(true);
     const reader = new FileReader();
     reader.onload = async () => {
       const localPreview = typeof reader.result === 'string' ? reader.result : '';
@@ -108,6 +110,8 @@ export function RoutePage() {
         imagePreview = (await uploadPresentMomentImage(sessionId, file)) ?? localPreview;
       } catch {
         imagePreview = localPreview;
+      } finally {
+        setImageUploading(false);
       }
       const imageTags = inferImageTags(file.name, momentText);
       const routeInfluence = getMomentInfluence(presentMoment.scene, momentText, imageTags);
@@ -127,6 +131,7 @@ export function RoutePage() {
   return (
     <main className="page flow-page">
       <LoadingOverlay visible={aiLoading} message={language === 'cn' ? 'AI 正在生成你们今天的路线…' : 'AI is generating today\u2019s route…'} />
+      <LoadingOverlay visible={imageUploading} message={language === 'cn' ? '正在上传图片…' : 'Uploading image…'} />
       <section className="flow-header">
         <span className="step-pill">03 / {language === 'cn' ? '路线引擎' : 'Route Engine'}</span>
         <h1>{aiLoading ? (language === 'cn' ? 'AI 正在生成你们今天的路线…' : 'AI is generating today\u2019s route…') : (language === 'cn' ? 'AI 已生成你们今天的路线' : 'AI has generated today\u2019s route')}</h1>

@@ -68,8 +68,8 @@ export async function loadExplorationDetail(explorationId: string) {
   return getJson<ExplorationDetailResult>(`/api/spaces/explorations/detail/${encodeURIComponent(explorationId)}`);
 }
 
-export async function listSpaceExplorations(spaceId: string) {
-  return getJson<ExplorationListResult>(`/api/spaces/explorations/${encodeURIComponent(spaceId)}`);
+export async function listSpaceExplorations(spaceId: string, page = 1, pageSize = 20) {
+  return getJson<ExplorationListResult>(`/api/spaces/explorations/${encodeURIComponent(spaceId)}?page=${page}&pageSize=${pageSize}`);
 }
 
 export async function loadSpaceManagement(spaceId: string) {

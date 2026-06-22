@@ -1,4 +1,4 @@
-import type { JourneyGoal, Language, MapArea, RelationshipStage } from '../../types';
+import type { JourneyGoal, JourneyLength, Language, MapArea, RelationshipStage } from '../../types';
 
 export interface RelationshipStageOption {
   id: RelationshipStage;
@@ -6,6 +6,14 @@ export interface RelationshipStageOption {
   label: Record<Language, string>;
   description: Record<Language, string>;
   recommendedGoals: JourneyGoal[];
+}
+
+export interface JourneyLengthOption {
+  id: JourneyLength;
+  icon: string;
+  label: Record<Language, string>;
+  description: Record<Language, string>;
+  questionCount: number;
 }
 
 export interface JourneyGoalOption {
@@ -65,6 +73,38 @@ export const journeyGoals: JourneyGoalOption[] = [
 
 export function getStageOption(stage: RelationshipStage | null) {
   return relationshipStages.find((item) => item.id === stage) ?? null;
+}
+
+export const journeyLengths: JourneyLengthOption[] = [
+  {
+    id: 'short',
+    icon: '✨',
+    label: { cn: '轻量', en: 'Short' },
+    description: { cn: '2 题，适合快速破冰。', en: '2 questions, a quick icebreaker.' },
+    questionCount: 2,
+  },
+  {
+    id: 'normal',
+    icon: '🌿',
+    label: { cn: '日常', en: 'Normal' },
+    description: { cn: '3 题，一次标准的探索。', en: '3 questions, a standard exploration.' },
+    questionCount: 3,
+  },
+  {
+    id: 'deep',
+    icon: '💫',
+    label: { cn: '深度', en: 'Deep' },
+    description: { cn: '5 题，更深入的对话。', en: '5 questions, a deeper conversation.' },
+    questionCount: 5,
+  },
+];
+
+export function getJourneyLengthOption(length: JourneyLength | null) {
+  return journeyLengths.find((item) => item.id === length) ?? journeyLengths[1];
+}
+
+export function getJourneyQuestionCount(length: JourneyLength | null): number {
+  return getJourneyLengthOption(length).questionCount;
 }
 
 export function getGoalOption(goal: JourneyGoal | null) {

@@ -29,7 +29,10 @@ export function AuthButton() {
   const [info, setInfo] = useState('');
   const [needsEmailVerification, setNeedsEmailVerification] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const cn = language === 'cn';
+  const errorId = 'auth-modal-error';
+  const infoId = 'auth-modal-info';
 
   useEffect(() => {
     const handler = () => setOpen(true);
@@ -46,9 +49,33 @@ export function AuthButton() {
       setConfirmPassword('');
       return;
     }
-    // Escape 键关闭对话框
+    // Escape 关闭 + Tab 焦点陷阱
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        setOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusables = dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (event.shiftKey) {
+        if (active === first || !dialog.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.addEventListener('keydown', handleKeyDown);
     // 打开时自动聚焦对话框
@@ -59,6 +86,8 @@ export function AuthButton() {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       window.clearTimeout(focusTimer);
+      // 关闭时恢复焦点到触发按钮
+      triggerRef.current?.focus();
     };
   }, [open]);
 
@@ -123,6 +152,7 @@ export function AuthButton() {
   };
 
   const label = authUser ? authUser.email ?? authUser.id : cn ? '登录/注册' : 'Sign in / Sign up';
+  const describedBy = [localError || authError ? errorId : null, info ? infoId : null].filter(Boolean).join(' ') || undefined;
 
   return (
     <div className="auth-button-wrap">
@@ -133,6 +163,7 @@ export function AuthButton() {
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls="auth-modal"
+        ref={triggerRef}
       >
         <span className="auth-button-label" title={authUser ? authUser.email ?? authUser.id : undefined}>{label}</span>
       </button>
@@ -145,6 +176,7 @@ export function AuthButton() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="auth-modal-title"
+            aria-describedby={describedBy}
             onClick={(event) => event.stopPropagation()}
           >
             <button type="button" className="auth-modal-close" onClick={() => setOpen(false)} aria-label={cn ? '关闭' : 'Close'}>×</button>
@@ -202,7 +234,7 @@ export function AuthButton() {
                   )}
                 </div>
                 {(localError || authError) && (
-                  <small className="auth-modal-error">
+                  <small id={errorId} className="auth-modal-error" role="alert">
                     {localError || (authError && /invalid login credentials/i.test(authError)
                       ? (cn
                           ? '邮箱或密码错误。若刚注册，请检查邮箱验证邮件并完成验证后再登录。'
@@ -215,7 +247,7 @@ export function AuthButton() {
                     {authStatus === 'loading' ? (cn ? '发送中…' : 'Sending…') : (cn ? '重新发送验证邮件' : 'Resend verification email')}
                   </button>
                 )}
-                {info && <small className="auth-modal-info">{info}</small>}
+                {info && <small id={infoId} className="auth-modal-info">{info}</small>}
               </>
             )}
           </div>

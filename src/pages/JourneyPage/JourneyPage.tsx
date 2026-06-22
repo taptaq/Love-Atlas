@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { mapAreaConfig } from '../../features/map/map.config';
+import { getJourneyQuestionCount } from '../../features/relationship/relationship.config';
 import { useSessionStore } from '../../features/session/useSessionStore';
 import { useJourneyStore, useUiStore } from '../../store';
 
@@ -7,6 +8,7 @@ export function JourneyPage() {
   const language = useUiStore((state) => state.language);
   const currentQuestion = useJourneyStore((state) => state.currentQuestion);
   const currentQuestionIndex = useJourneyStore((state) => state.currentQuestionIndex);
+  const journeyLength = useJourneyStore((state) => state.journeyLength);
   const abAnswers = useJourneyStore((state) => state.abAnswers);
   const worldState = useJourneyStore((state) => state.worldState);
   const submitAnswerA = useJourneyStore((state) => state.submitAnswerA);
@@ -43,6 +45,8 @@ export function JourneyPage() {
 
   const area = mapAreaConfig[currentQuestion.region];
   const questionNumber = currentQuestionIndex + 1;
+  const totalQuestions = getJourneyQuestionCount(journeyLength);
+  const isLastQuestion = questionNumber >= totalQuestions;
 
   // 角色映射：host = A（我），partner = B（对方）
   const isHost = role === 'host';
@@ -73,7 +77,7 @@ export function JourneyPage() {
   return (
     <main className="page flow-page journey-page">
       <section className="flow-header">
-        <span className="step-pill">04 / {cn ? '探索旅程' : 'Journey'} · {cn ? `第 ${questionNumber} 题` : `Question ${questionNumber}`}</span>
+        <span className="step-pill">04 / {cn ? '探索旅程' : 'Journey'} · {cn ? `第 ${questionNumber} / ${totalQuestions} 题` : `Question ${questionNumber} / ${totalQuestions}`}</span>
         <h1>{area.icon} {area.label[language]}</h1>
         <p>{currentQuestion.localizedReason?.[language] ?? currentQuestion.reason}</p>
       </section>
@@ -190,12 +194,20 @@ export function JourneyPage() {
 
       {abAnswers.revealVisible && (
         <div className="flow-actions">
-          <button className="primary-btn" type="button" onClick={goToNextQuestion}>
-            {cn ? '继续探索' : 'Keep Exploring'}
-          </button>
-          <button type="button" onClick={endJourney}>
-            {cn ? '结束探索' : 'End Exploration'}
-          </button>
+          {isLastQuestion ? (
+            <button className="primary-btn" type="button" onClick={endJourney}>
+              {cn ? '完成探索' : 'Finish Exploration'}
+            </button>
+          ) : (
+            <>
+              <button className="primary-btn" type="button" onClick={goToNextQuestion}>
+                {cn ? '继续探索' : 'Keep Exploring'}
+              </button>
+              <button type="button" onClick={endJourney}>
+                {cn ? '结束探索' : 'End Exploration'}
+              </button>
+            </>
+          )}
         </div>
       )}
     </main>

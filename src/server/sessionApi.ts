@@ -76,51 +76,62 @@ async function persistStructuredState(params: { sessionId: string; sharedState: 
   const events = asArray(shared.events);
   const summary = asRecord(shared.summary);
 
+  // 预构建批量插入数据，避免在事务中串行 await
+  const abInteractionData: Prisma.AbInteractionCreateManyInput[] = [];
+
+  for (const [index, item] of history.entries()) {
+    const historyItem = asRecord(item);
+    const question = asRecord(historyItem?.question);
+    const answers = asRecord(historyItem?.answers);
+    if (!question || !answers) continue;
+    const completedAt = historyItem?.completedAt ? new Date(asString(historyItem.completedAt)) : null;
+    abInteractionData.push({
+      sessionId: params.sessionId,
+      spaceId,
+      explorationId,
+      questionId: asString(question.id) || `history-${index}`,
+      questionText: asString(question.question) || asString(question.title) || 'Relationship question',
+      hostAnswer: asString(answers.answerA) || null,
+      partnerAnswer: asString(answers.answerB) || null,
+      hostAnsweredAt: completedAt,
+      partnerAnsweredAt: completedAt,
+      result: toJsonValue(answers),
+      completedAt,
+    });
+  }
+
+  if (currentQuestion && abAnswers && (asString(abAnswers.answerA) || asString(abAnswers.answerB))) {
+    abInteractionData.push({
+      sessionId: params.sessionId,
+      spaceId,
+      explorationId,
+      questionId: asString(currentQuestion.id) || 'current',
+      questionText: asString(currentQuestion.question) || asString(currentQuestion.title) || 'Relationship question',
+      hostAnswer: asString(abAnswers.answerA) || null,
+      partnerAnswer: asString(abAnswers.answerB) || null,
+      hostAnsweredAt: null,
+      partnerAnsweredAt: null,
+      result: toJsonValue(abAnswers),
+      completedAt: abAnswers.revealVisible ? new Date() : null,
+    });
+  }
+
+  const mirrorSource = currentEvent ?? asRecord(events[events.length - 1]);
+  const hasMirror = mirrorEvent && (mirrorEvent.completed || mirrorEvent.active || mirrorEvent.signal || mirrorSource);
+  const hasSummary = summary && (asString(summary.resonance) || asArray(summary.discoveries).length > 0 || asArray(summary.events).length > 0);
+
   await prisma.$transaction(async (transaction) => {
+    // 删除旧记录
     await transaction.abInteraction.deleteMany({ where: { explorationId } });
     await transaction.mirrorEvent.deleteMany({ where: { explorationId } });
     await transaction.sessionSummary.deleteMany({ where: { explorationId } });
 
-    for (const [index, item] of history.entries()) {
-      const historyItem = asRecord(item);
-      const question = asRecord(historyItem?.question);
-      const answers = asRecord(historyItem?.answers);
-      if (!question || !answers) continue;
-      await transaction.abInteraction.create({
-        data: {
-          sessionId: params.sessionId,
-          spaceId,
-          explorationId,
-          questionId: asString(question.id) || `history-${index}`,
-          questionText: asString(question.question) || asString(question.title) || 'Relationship question',
-          hostAnswer: asString(answers.answerA) || null,
-          partnerAnswer: asString(answers.answerB) || null,
-          hostAnsweredAt: historyItem?.completedAt ? new Date(asString(historyItem.completedAt)) : null,
-          partnerAnsweredAt: historyItem?.completedAt ? new Date(asString(historyItem.completedAt)) : null,
-          result: toJsonValue(answers),
-          completedAt: historyItem?.completedAt ? new Date(asString(historyItem.completedAt)) : null,
-        },
-      });
+    // 批量插入 AB 互动记录（替代串行 create）
+    if (abInteractionData.length > 0) {
+      await transaction.abInteraction.createMany({ data: abInteractionData });
     }
 
-    if (currentQuestion && abAnswers && (asString(abAnswers.answerA) || asString(abAnswers.answerB))) {
-      await transaction.abInteraction.create({
-        data: {
-          sessionId: params.sessionId,
-          spaceId,
-          explorationId,
-          questionId: asString(currentQuestion.id) || 'current',
-          questionText: asString(currentQuestion.question) || asString(currentQuestion.title) || 'Relationship question',
-          hostAnswer: asString(abAnswers.answerA) || null,
-          partnerAnswer: asString(abAnswers.answerB) || null,
-          result: toJsonValue(abAnswers),
-          completedAt: abAnswers.revealVisible ? new Date() : null,
-        },
-      });
-    }
-
-    const mirrorSource = currentEvent ?? asRecord(events[events.length - 1]);
-    if (mirrorEvent && (mirrorEvent.completed || mirrorEvent.active || mirrorEvent.signal || mirrorSource)) {
+    if (hasMirror) {
       await transaction.mirrorEvent.create({
         data: {
           sessionId: params.sessionId,
@@ -137,7 +148,7 @@ async function persistStructuredState(params: { sessionId: string; sharedState: 
       });
     }
 
-    if (summary && (asString(summary.resonance) || asArray(summary.discoveries).length > 0 || asArray(summary.events).length > 0)) {
+    if (hasSummary) {
       await transaction.sessionSummary.create({
         data: {
           sessionId: params.sessionId,

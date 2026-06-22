@@ -1,10 +1,12 @@
-import { relationshipStages } from '../../features/relationship/relationship.config';
+import { journeyLengths, relationshipStages } from '../../features/relationship/relationship.config';
 import { useJourneyStore, useUiStore } from '../../store';
 
 export function SetupPage() {
   const language = useUiStore((state) => state.language);
   const relationshipStage = useJourneyStore((state) => state.relationshipStage);
   const setRelationshipStage = useJourneyStore((state) => state.setRelationshipStage);
+  const journeyLength = useJourneyStore((state) => state.journeyLength);
+  const setJourneyLength = useJourneyStore((state) => state.setJourneyLength);
   const nextStep = useJourneyStore((state) => state.nextStep);
   const goToStep = useJourneyStore((state) => state.goToStep);
 
@@ -27,6 +29,27 @@ export function SetupPage() {
             <span className="option-icon">{stage.icon}</span>
             <strong>{stage.label[language]}</strong>
             <small>{stage.description[language]}</small>
+          </button>
+        ))}
+      </section>
+
+      <section className="flow-header">
+        <span className="step-pill">{language === 'cn' ? '旅程长度' : 'Journey Length'}</span>
+        <h2>{language === 'cn' ? '今天想聊多深？' : 'How deep today?'}</h2>
+        <p>{language === 'cn' ? '选择本次探索的问题数量。' : 'Choose how many questions for this exploration.'}</p>
+      </section>
+
+      <section className="option-grid">
+        {journeyLengths.map((option) => (
+          <button
+            className={`option-card ${journeyLength === option.id ? 'selected' : ''}`}
+            key={option.id}
+            type="button"
+            onClick={() => setJourneyLength(option.id)}
+          >
+            <span className="option-icon">{option.icon}</span>
+            <strong>{option.label[language]}</strong>
+            <small>{option.description[language]}</small>
           </button>
         ))}
       </section>

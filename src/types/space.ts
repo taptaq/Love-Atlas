@@ -40,6 +40,10 @@ export type SpaceApiResult = {
 
 export type ExplorationListResult = {
   explorations: ExplorationSession[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
 };
 
 export type ExplorationStateResult = {
