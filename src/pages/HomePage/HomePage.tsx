@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import { requestAuthPopover } from '../../components/auth/AuthButton';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
+import { SpaceOnboarding } from '../../components/ui/SpaceOnboarding';
+import { TermTooltip } from '../../components/ui/TermTooltip';
+import { WeeklyBlindBox } from '../../components/ui/WeeklyBlindBox';
+import { ReminderBanner } from '../../components/ui/ReminderBanner';
+import { friendlyError } from '../../utils/friendlyError';
+import type { WeeklyTheme } from '../../services/weeklyBlindBoxService';
 import { getDiscoveryCopy } from '../../features/discovery/discoveryI18n';
 import { useAuthStore } from '../../features/auth/useAuthStore';
 import { createPersistentExploration, createPersistentSpace, createTemporarySpace, joinRelationshipSpace, leaveSpace, loadExplorationSharedState, listSpaceExplorations, unbindPersistentSpace, upgradeTemporarySpace } from '../../features/session/spaceService';
@@ -32,6 +39,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
   const setSpaceConnecting = useSpaceStore((store) => store.setConnecting);
   const setSpaceError = useSpaceStore((store) => store.setError);
   const clearSpace = useSpaceStore((store) => store.clearSpace);
+  const isCompanion = useSpaceStore((store) => store.isCompanion);
   const latestCopy = latest ? getDiscoveryCopy(latest, language) : null;
   const authUser = useAuthStore((store) => store.user);
   const [joinCode, setJoinCode] = useState('');
@@ -40,14 +48,15 @@ export function HomePage({ memberCount }: { memberCount: number }) {
   const [copiedCode, setCopiedCode] = useState(false);
   const [summaryNotice, setSummaryNotice] = useState('');
   const [spaceAction, setSpaceAction] = useState<'creating' | 'leaving' | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<'leave' | 'unbind' | null>(null);
   const hasSpace = Boolean(space && session);
   const isTemporarySpace = space?.type === 'temporary';
   const isPersistentSpace = space?.type === 'persistent';
   const partnerJoined = memberCount >= 2;
   const cn = language === 'cn';
 
-  const enterSpace = (result: SpaceApiResult) => {
-    setSpace(result.space, result.exploration, result.role);
+  const enterSpace = (result: SpaceApiResult, companion = false) => {
+    setSpace(result.space, result.exploration, result.role, companion);
     setSession(result.session, result.role === 'owner' ? 'host' : 'partner');
     if (result.space.type === 'persistent') {
       void refreshExplorations(result.space.id);
@@ -89,7 +98,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       const result = await createTemporarySpace(selectRelationshipSharedState(useJourneyStore.getState()));
       enterSpace(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to create temporary space';
+      const message = friendlyError(error, language);
       setSpaceError(message);
       setSessionError(message);
     } finally {
@@ -112,7 +121,49 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       const result = await createPersistentSpace(selectRelationshipSharedState(useJourneyStore.getState()), authUser.id);
       enterSpace(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to create persistent space';
+      const message = friendlyError(error, language);
+      setSpaceError(message);
+      setSessionError(message);
+    } finally {
+      setSpaceAction(null);
+    }
+  };
+
+  // 虚拟伴侣模式：让评审无需真实伴侣即可走完整个流程，AI 扮演对方回答
+  const handleCreateCompanionTemporarySpace = async () => {
+    try {
+      resetJourney();
+      goToStep('home');
+      setSpaceAction('creating');
+      setSpaceConnecting();
+      setSessionConnecting();
+      const result = await createTemporarySpace(selectRelationshipSharedState(useJourneyStore.getState()));
+      enterSpace(result, true);
+    } catch (error) {
+      const message = friendlyError(error, language);
+      setSpaceError(message);
+      setSessionError(message);
+    } finally {
+      setSpaceAction(null);
+    }
+  };
+
+  const handleCreateCompanionPersistentSpace = async () => {
+    if (!authUser) {
+      requestAuthPopover();
+      setSpaceError(cn ? '请先点击右上角登录，再创建专属关系空间。' : 'Please sign in via the top-right button to create a private relationship space.');
+      return;
+    }
+    try {
+      resetJourney();
+      goToStep('home');
+      setSpaceAction('creating');
+      setSpaceConnecting();
+      setSessionConnecting();
+      const result = await createPersistentSpace(selectRelationshipSharedState(useJourneyStore.getState()), authUser.id);
+      enterSpace(result, true);
+    } catch (error) {
+      const message = friendlyError(error, language);
       setSpaceError(message);
       setSessionError(message);
     } finally {
@@ -130,15 +181,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       if (explorationState.sharedState) hydrateSharedState(explorationState.sharedState);
       enterSpace(result);
     } catch (error) {
-      const raw = error instanceof Error ? error.message : 'Unable to join space';
-      let message = raw;
-      if (/already has two active members/i.test(raw)) {
-        message = cn ? '该空间已有两人，无法再加入。每个空间只允许两个人。' : 'This space already has two members. Each space is limited to two people.';
-      } else if (/space not found/i.test(raw)) {
-        message = cn ? '找不到该空间，请检查邀请码是否正确。' : 'Space not found. Please check the invite code.';
-      } else if (/expired/i.test(raw)) {
-        message = cn ? '该临时空间已过期。' : 'This temporary space has expired.';
-      }
+      const message = friendlyError(error, language);
       setSpaceError(message);
       setSessionError(message);
     }
@@ -146,7 +189,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
 
   const handleStartExploration = async () => {
     if (!space) return;
-    if (!partnerJoined) {
+    if (!partnerJoined && !isCompanion) {
       setSpaceError(cn ? '请等待对方加入空间后再开启探索。把邀请码发给对方即可邀请加入。' : 'Please wait for your partner to join before starting. Share the invite code to invite them.');
       return;
     }
@@ -167,7 +210,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       enterSpace(result);
       goToStep('setup');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to create exploration';
+      const message = friendlyError(error, language);
       setSpaceError(message);
       setSessionError(message);
     }
@@ -186,7 +229,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       const result = await upgradeTemporarySpace(space.id, authUser.id);
       enterSpace(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to upgrade space';
+      const message = friendlyError(error, language);
       setSpaceError(message);
       setSessionError(message);
     }
@@ -206,7 +249,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
         goToStep('home');
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to unbind space';
+      const message = friendlyError(error, language);
       setSpaceError(message);
       setSessionError(message);
     } finally {
@@ -249,14 +292,20 @@ export function HomePage({ memberCount }: { memberCount: number }) {
     goToStep('summary');
   };
 
-  const friendlyError = (raw: string) => {
-    if (!raw) return '';
-    if (/Can't reach database server|database server is running/i.test(raw)) {
-      return language === 'cn'
-        ? '无法连接到数据库服务器，请检查网络或稍后再试。（临时空间和专属空间都需要数据库支持）'
-        : 'Cannot reach the database server. Please check your network or try again later. (Both temporary and private spaces require database connectivity.)';
+  const handleStartBlindBoxTheme = (theme: WeeklyTheme) => {
+    const store = useJourneyStore.getState();
+    store.setRelationshipStage(theme.stage);
+    store.setGoal(theme.goal);
+    store.applyPresentMoment({ text: theme.momentText[language] });
+    if (hasSpace && (partnerJoined || isCompanion)) {
+      goToStep('setup');
+    } else if (hasSpace && !partnerJoined && !isCompanion) {
+      setSpaceError(cn ? '主题已准备好，请等待对方加入空间后再开启探索。' : 'Theme is ready. Please wait for your partner to join before starting.');
+    } else {
+      void handleCreateTemporarySpace().then(() => {
+        goToStep('setup');
+      });
     }
-    return raw;
   };
 
   return (
@@ -267,16 +316,55 @@ export function HomePage({ memberCount }: { memberCount: number }) {
           ? (language === 'cn' ? '正在离开空间…' : 'Leaving space…')
           : (language === 'cn' ? '正在创建空间…' : 'Creating space…')}
       />
+      {space && session && (
+        <SpaceOnboarding spaceId={space.id} role={spaceRole ?? ''} spaceType={space.type} />
+      )}
+      <ConfirmDialog
+        visible={pendingConfirm === 'leave'}
+        title={cn ? '确定离开空间？' : 'Leave this space?'}
+        message={cn ? '离开后临时空间将被删除，本次对话记录无法恢复。' : 'The temporary space will be deleted and this conversation cannot be recovered.'}
+        confirmLabel={cn ? '确定离开' : 'Leave'}
+        cancelLabel={cn ? '再想想' : 'Stay'}
+        danger
+        onConfirm={() => { setPendingConfirm(null); void handleLeaveTemporarySpace(); }}
+        onCancel={() => setPendingConfirm(null)}
+      />
+      <ConfirmDialog
+        visible={pendingConfirm === 'unbind'}
+        title={cn ? '确定解绑专属空间？' : 'Unbind this space?'}
+        message={cn ? '解绑后你将退出这个关系空间，但空间记录仍会保留。' : 'You will leave this relationship space, but the space records will be kept.'}
+        confirmLabel={cn ? '确定解绑' : 'Unbind'}
+        cancelLabel={cn ? '再想想' : 'Cancel'}
+        danger
+        onConfirm={() => { setPendingConfirm(null); void handleUnbindSpace(); }}
+        onCancel={() => setPendingConfirm(null)}
+      />
       <section className="space-hero">
-        <span className="step-pill">Relationship OS</span>
+        <span className="step-pill">{language === 'cn' ? '深度对话启动器' : 'Deep Conversation Starter'}</span>
         <h1>Love Atlas</h1>
-        <p>{language === 'cn' ? '一起探索关系里的心动、差异与默契，把每一次互动沉淀成属于你们的地图。' : 'Explore the sparks, differences, and quiet understanding that shape your shared relationship map.'}</p>
+        <p>
+          {language === 'cn' ? (
+            <>从一次<TermTooltip explanation={{ cn: '通过问答和镜像时刻，发现彼此真实想法的过程', en: 'A guided Q&A and mirror-moment journey to discover each other' }}>深度对话</TermTooltip>开始，看见彼此真实的样子，把每次交心<TermTooltip explanation={{ cn: '把每次探索的结果保存下来，慢慢积累成你们的关系地图', en: 'Save each exploration to gradually build your relationship map' }}>沉淀</TermTooltip>成你们的关系地图。</>
+          ) : (
+            <>Start with one deep conversation — see each other truly, and let every heartfelt exchange shape your shared map.</>
+          )}
+        </p>
       </section>
+
+      <WeeklyBlindBox onStart={handleStartBlindBoxTheme} />
+
+      <ReminderBanner />
 
       <section className={hasSpace ? 'space-entry-layout' : 'space-entry-layout space-entry-layout-single'}>
         <article className="space-primary-card">
           <span className="card-icon">💞</span>
-          <span className="eyebrow">{language === 'cn' ? '空间入口' : 'Space Entry'}</span>
+          <span className="eyebrow">
+            {language === 'cn' ? (
+              <TermTooltip explanation={{ cn: '你和对方共同进入的私密对话区域，同步状态、共享探索进度', en: 'A private shared area where you and your partner sync state and explore together' }}>空间入口</TermTooltip>
+            ) : (
+              'Space Entry'
+            )}
+          </span>
           <h2>
             {space
               ? isTemporarySpace
@@ -287,9 +375,9 @@ export function HomePage({ memberCount }: { memberCount: number }) {
           <p>
             {space
               ? isTemporarySpace
-                ? language === 'cn' ? '这是一次性的轻量探索空间，适合初识、相亲或一次默契测试。' : 'This is a lightweight one-time space for early connection, dating, or a quick compatibility check.'
-                : language === 'cn' ? '这是只属于你们的长期关系空间，会持续沉淀关系地图、发现和总结。' : 'This is your long-term relationship space for maps, discoveries, and summaries.'
-              : language === 'cn' ? '你可以创建临时空间快速探索，也可以创建专属关系空间进行长期沉淀。' : 'Create a temporary space for a quick exploration, or a private space for long-term growth.'}
+                ? language === 'cn' ? '适合一次深度破冰对话——初识、相亲或想认真聊聊的两个人。' : 'A one-time space for a deep ice-breaking conversation — for new connections or first real talks.'
+                : language === 'cn' ? '只属于你们的长期对话空间，每次深聊都会沉淀成关系地图。' : 'Your private space for ongoing deep conversations — every talk shapes your shared map.'
+              : language === 'cn' ? '创建临时空间来一次深度对话，或开启专属空间持续积累。' : 'Start a temporary space for one deep talk, or a private space for ongoing depth.'}
           </p>
 
           {space && session ? (
@@ -307,16 +395,18 @@ export function HomePage({ memberCount }: { memberCount: number }) {
               {spaceRole !== 'owner' && (
                 <small>{language === 'cn' ? '你已加入对方的空间' : 'You joined this space'}</small>
               )}
-              <div className={`space-presence-hint ${partnerJoined ? 'space-presence-ready' : 'space-presence-waiting'}`}>
-                {spaceRole === 'owner'
-                  ? (partnerJoined
-                      ? (cn ? '✓ 对方已加入，可以开启探索' : '✓ Partner joined, ready to explore')
-                      : (cn ? '⏳ 等待对方加入…把邀请码发给对方' : '⏳ Waiting for partner to join… share the invite code'))
-                  : (partnerJoined
-                      ? (cn ? '✓ 已加入空间，可以开启探索' : '✓ Joined, ready to explore')
-                      : (cn ? '⏳ 已加入空间，等待对方上线…' : '⏳ Joined, waiting for partner to come online…'))}
+              <div className={`space-presence-hint ${(partnerJoined || isCompanion) ? 'space-presence-ready' : 'space-presence-waiting'}`}>
+                {isCompanion
+                  ? (cn ? '🤖 虚拟伴侣模式 · 可直接开启探索' : '🤖 Virtual Companion mode · ready to explore')
+                  : spaceRole === 'owner'
+                    ? (partnerJoined
+                        ? (cn ? '✓ 对方已加入，可以开启探索' : '✓ Partner joined, ready to explore')
+                        : (cn ? '⏳ 等待对方加入…把邀请码发给对方' : '⏳ Waiting for partner to join… share the invite code'))
+                    : (partnerJoined
+                        ? (cn ? '✓ 已加入空间，可以开启探索' : '✓ Joined, ready to explore')
+                        : (cn ? '⏳ 已加入空间，等待对方上线…' : '⏳ Joined, waiting for partner to come online…'))}
               </div>
-              <button className="primary-btn" type="button" onClick={handleStartExploration} disabled={!partnerJoined}>
+              <button className="primary-btn" type="button" onClick={handleStartExploration} disabled={!partnerJoined && !isCompanion}>
                 {isTemporarySpace ? (language === 'cn' ? '开启本次探索' : 'Start This Exploration') : (language === 'cn' ? '开启新的探索' : 'Start a New Exploration')}
               </button>
               {isTemporarySpace && spaceRole === 'owner' && (
@@ -326,7 +416,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
                   </button>
                 </>
               )}
-              <button className="leave-space-btn" type="button" onClick={handleLeaveTemporarySpace}>
+              <button className="leave-space-btn" type="button" onClick={() => setPendingConfirm('leave')}>
                 {language === 'cn' ? '离开当前空间' : 'Leave This Space'}
               </button>
             </div>
@@ -336,12 +426,12 @@ export function HomePage({ memberCount }: { memberCount: number }) {
                 <button className="create-option-btn create-option-temporary" type="button" onClick={handleCreateTemporarySpace} disabled={spaceStatus === 'connecting'}>
                   <span className="create-option-title">{language === 'cn' ? '创建临时探索空间' : 'Create Temporary Space'}</span>
                   <span className="create-option-desc">{language === 'cn' ? '一次性轻量探索，适合初识或默契测试' : 'One-time lightweight exploration for first connections'}</span>
-                  <span className="create-option-audience">{language === 'cn' ? '推荐：初次约会、暧昧期、想轻松破冰的情侣' : 'Best for: first dates, early-stage connections, or light icebreakers'}</span>
+                  <span className="create-option-audience">{language === 'cn' ? '推荐：初次约会、暧昧期、想认真聊聊的两个人' : 'Best for: first dates, early-stage connections, or your first real talk'}</span>
                 </button>
                 <button className="create-option-btn create-option-persistent" type="button" onClick={handleCreatePersistentSpace} disabled={spaceStatus === 'connecting'}>
                   <span className="create-option-title">{language === 'cn' ? '创建专属关系空间' : 'Create Private Space'}</span>
                   <span className="create-option-desc">{language === 'cn' ? '长期沉淀地图、发现与总结，需要登录' : 'Long-term maps, discoveries, and summaries (sign-in required)'}</span>
-                  <span className="create-option-audience">{language === 'cn' ? '推荐：稳定伴侣、夫妻共同探索、长期关系成长' : 'Best for: steady partners, couples, and long-term relationship growth'}</span>
+                  <span className="create-option-audience">{language === 'cn' ? '推荐：稳定伴侣、夫妻、想持续深度对话的关系' : 'Best for: steady partners, couples, and ongoing deep conversations'}</span>
                 </button>
               </div>
 
@@ -360,6 +450,23 @@ export function HomePage({ memberCount }: { memberCount: number }) {
                 <button className="space-join-btn" type="button" onClick={handleJoinSpace} disabled={spaceStatus === 'connecting' || !joinCode.trim()}>
                   {spaceStatus === 'connecting' ? (language === 'cn' ? '加入中…' : 'Joining…') : (language === 'cn' ? '加入空间' : 'Join Space')}
                 </button>
+              </div>
+
+              <div className="companion-demo-group">
+                <div className="companion-demo-divider">
+                  <span>{language === 'cn' ? '评审快速体验（虚拟伴侣）' : 'Reviewer Quick Demo (Virtual Companion)'}</span>
+                </div>
+                <p className="companion-demo-hint">{language === 'cn' ? '没有真实伴侣也能走完整个流程——AI 会扮演对方回答每一题。' : 'Experience the full flow solo — AI plays your partner for every question.'}</p>
+                <div className="companion-demo-actions">
+                  <button className="create-option-btn create-option-companion" type="button" onClick={handleCreateCompanionTemporarySpace} disabled={spaceStatus === 'connecting'}>
+                    <span className="create-option-title">{language === 'cn' ? '虚拟伴侣 · 临时空间' : 'Virtual Companion · Temporary'}</span>
+                    <span className="create-option-desc">{language === 'cn' ? 'AI 扮演对方，快速体验一次完整探索' : 'AI plays your partner for one full exploration'}</span>
+                  </button>
+                  <button className="create-option-btn create-option-companion" type="button" onClick={handleCreateCompanionPersistentSpace} disabled={spaceStatus === 'connecting'}>
+                    <span className="create-option-title">{language === 'cn' ? '虚拟伴侣 · 专属空间' : 'Virtual Companion · Private'}</span>
+                    <span className="create-option-desc">{language === 'cn' ? 'AI 扮演对方，体验长期沉淀与地图（需登录）' : 'AI plays your partner for long-term maps (sign-in required)'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -402,7 +509,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
                 ? (language === 'cn' ? '历史探索 加载中…' : 'Loading explorations…')
                 : (language === 'cn' ? `历史探索 ${explorations.length} 次` : `${explorations.length} Past Explorations`)}
             </button>
-            <button type="button" onClick={handleUnbindSpace}>{language === 'cn' ? '解绑专属空间' : 'Unbind Private Space'}</button>
+            <button type="button" onClick={() => setPendingConfirm('unbind')}>{language === 'cn' ? '解绑专属空间' : 'Unbind Private Space'}</button>
           </aside>
         )}
       </section>

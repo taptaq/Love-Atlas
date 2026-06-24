@@ -1,14 +1,18 @@
 import { create } from 'zustand';
+import { generateAiInsights, generateAiQuestion, generateAiSummary } from '../features/relationship/aiJourneyService';
 import { getGoalOption } from '../features/relationship/relationship.config';
 import { JOURNEY_PROGRESS_DELTA, SIMILARITY_THRESHOLD } from '../features/relationship/journeyConfig';
 import { getRecommendedRouteAreas } from '../features/relationship/routePlanner';
 import { generateABInsights, getMirrorSignal, calculateSimilarity } from '../services/abEngine';
 import { createMirrorEvent, generateRelationshipEvent } from '../services/eventEngine';
-import { generateQuestion } from '../services/questionEngine';
+import { generateQuestion, generateWorldEffect } from '../services/questionEngine';
 import { loadStats, saveStats, unlockDiscovery } from '../services/atlasDiscoveryEngine';
 import { defaultWorldState, loadWorldState, saveWorldState } from '../services/worldStateService';
+import { saveSnapshot } from '../services/relationshipSnapshotService';
+import { recordExplorationCompleted } from '../services/notificationService';
 import type {
   ABAnswers,
+  ABInsights,
   JourneyGoal,
   JourneyLength,
   JourneyQuestion,
@@ -38,6 +42,11 @@ const defaultPresentMoment: PresentMomentState = {
   image: null,
   imagePreview: '',
   imageTags: [],
+  imageCaption: '',
+  imageUnderstandingSource: null,
+  imageOcrText: '',
+  imageOcrConfidence: null,
+  imageOcrStatus: 'idle',
   captureMode: null,
   routeInfluence: null,
 };
@@ -73,11 +82,42 @@ const defaultRoute: JourneyRoute = {
 const defaultSummary: SummaryData = {
   route: defaultRoute,
   resonance: '',
+  differences: '',
   discoveries: [],
   worldChanges: [],
   nextTopic: '',
+  actionSuggestion: '',
+  generatedBy: 'rules',
   events: [],
 };
+
+async function generateQuestionWithAiFallback(state: JourneyStoreState, questionIndex: number, historyQuestions: string[]) {
+  const areas = state.route.areas.length > 0 ? state.route.areas : [state.worldState.currentRegion];
+  try {
+    const aiQuestion = await generateAiQuestion({
+      stage: state.relationshipStage,
+      goal: state.goal,
+      areas,
+      currentQuestionIndex: questionIndex,
+      moment: state.presentMoment,
+      history: historyQuestions,
+      worldProgress: state.worldState.regionProgress,
+    });
+    return {
+      ...aiQuestion,
+      worldEffect: aiQuestion.worldEffect ?? generateWorldEffect(aiQuestion.emotion),
+    };
+  } catch {
+    return generateQuestion({
+      stage: state.relationshipStage,
+      goal: state.goal,
+      areas,
+      currentQuestionIndex: questionIndex,
+      moment: state.presentMoment,
+      history: historyQuestions,
+    });
+  }
+}
 
 export interface JourneyStoreState {
   currentStep: StepFlow;
@@ -112,12 +152,13 @@ interface JourneyStore extends JourneyStoreState {
   setJourneyLength: (length: JourneyLength) => void;
   setRoute: (route: JourneyRoute) => void;
   setCurrentQuestion: (question: JourneyQuestion | null) => void;
-  startJourney: () => void;
+  startJourney: () => void | Promise<void>;
   startMirrorEvent: () => void;
   completeCurrentEvent: () => void;
-  revealAnswers: () => void;
-  goToNextQuestion: () => void;
-  endJourney: () => void;
+  revealAnswers: () => Promise<void>;
+  isRevealing: boolean;
+  goToNextQuestion: () => void | Promise<void>;
+  endJourney: () => void | Promise<void>;
   applyPresentMoment: (moment: Partial<PresentMomentState>) => void;
   submitAnswerA: (answerA: string) => void;
   submitAnswerB: (answerB: string) => void;
@@ -147,6 +188,7 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
   mirrorEvent: defaultMirrorEvent,
   presentMoment: defaultPresentMoment,
   abAnswers: defaultABAnswers,
+  isRevealing: false,
   summary: defaultSummary,
   currentQuestion: null,
   currentEvent: null,
@@ -210,16 +252,9 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
   setJourneyLength: (journeyLength) => set({ journeyLength }),
   setRoute: (route) => set({ route, routeReason: typeof route.reason === 'string' ? route.reason : route.reason.cn }),
   setCurrentQuestion: (currentQuestion) => set({ currentQuestion }),
-  startJourney: () => {
+  startJourney: async () => {
     const state = get();
-    const question = generateQuestion({
-      stage: state.relationshipStage,
-      goal: state.goal,
-      areas: state.route.areas.length > 0 ? state.route.areas : [state.worldState.currentRegion],
-      currentQuestionIndex: 0,
-      moment: state.presentMoment,
-      history: state.journeyHistory.map((item) => item.question.question),
-    });
+    const question = await generateQuestionWithAiFallback(state, 0, state.journeyHistory.map((item) => item.question.question));
     set({ currentQuestion: question, currentQuestionIndex: 0, currentStep: 'journey', abAnswers: defaultABAnswers });
   },
   startMirrorEvent: () => {
@@ -240,27 +275,72 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
       mirrorEvent: { ...state.mirrorEvent, active: false, completed: true, unlocked: false },
     });
   },
-  revealAnswers: () => {
+  revealAnswers: async () => {
     const state = get();
     if (!state.currentQuestion) return;
-    const similarity = calculateSimilarity(state.abAnswers.answerA, state.abAnswers.answerB);
-    const insights = generateABInsights(state.abAnswers.answerA, state.abAnswers.answerB, state.currentQuestion.region);
+    const answerA = state.abAnswers.answerA;
+    const answerB = state.abAnswers.answerB;
+    const region = state.currentQuestion.region;
+    const question = state.currentQuestion.localized?.cn ?? state.currentQuestion.question;
+    const similarity = calculateSimilarity(answerA, answerB);
+    const hasMoment = Boolean(state.presentMoment.scene || state.presentMoment.text || state.presentMoment.image);
+
+    // 标记正在揭晓，UI 显示 loading
+    set({ isRevealing: true });
+
+    // 优先用 AI 生成个性化洞察，失败回退到规则引擎
+    let insights: ABInsights;
+    let mirrorTrigger: boolean;
+    let nextMemorySeed: string;
+    try {
+      const aiResult = await generateAiInsights({
+        answerA,
+        answerB,
+        similarity,
+        question,
+        stage: state.relationshipStage,
+        goal: state.goal,
+        region,
+        hasMoment,
+      });
+      insights = aiResult.insights;
+      mirrorTrigger = aiResult.mirrorSignal.trigger;
+      nextMemorySeed = aiResult.mirrorSignal.nextMemorySeed;
+    } catch {
+      // 回退到规则引擎
+      insights = generateABInsights(answerA, answerB, region);
+      const ruleMirrorSignal = getMirrorSignal({
+        stage: state.relationshipStage,
+        goal: state.goal,
+        similarity,
+        hasMoment,
+      });
+      mirrorTrigger = ruleMirrorSignal.trigger;
+      nextMemorySeed = ruleMirrorSignal.nextMemorySeed;
+    }
+
+    // 用规则引擎补全 mirrorSignal 的评分字段（用于 UI 展示）
     const mirrorSignal = getMirrorSignal({
       stage: state.relationshipStage,
       goal: state.goal,
       similarity,
-      hasMoment: Boolean(state.presentMoment.scene || state.presentMoment.text || state.presentMoment.image),
+      hasMoment,
     });
-    const generatedEvent = mirrorSignal.trigger
+    mirrorSignal.trigger = mirrorTrigger;
+    mirrorSignal.nextMemorySeed = nextMemorySeed;
+    mirrorSignal.reason = mirrorTrigger ? 'mirror-unlocked' : 'continue-route';
+
+    const generatedEvent = mirrorTrigger
       ? null
       : generateRelationshipEvent({
-          region: state.currentQuestion.region,
+          region,
           questionType: state.currentQuestion.type,
           similarity,
-          hasMoment: Boolean(state.presentMoment.scene || state.presentMoment.text || state.presentMoment.image),
-          memorySeed: mirrorSignal.nextMemorySeed,
+          hasMoment,
+          memorySeed: nextMemorySeed,
         });
     set({
+      isRevealing: false,
       abAnswers: {
         ...state.abAnswers,
         similarity,
@@ -274,27 +354,27 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
         active: false,
         signal: mirrorSignal,
         decision: null,
-        memorySeed: mirrorSignal.nextMemorySeed,
+        memorySeed: nextMemorySeed,
       },
       currentEvent: generatedEvent,
       events: generatedEvent ? [...state.events, generatedEvent] : state.events,
       worldState: {
         ...state.worldState,
-        currentRegion: state.currentQuestion.region,
+        currentRegion: region,
         regionProgress: {
           ...state.worldState.regionProgress,
-          [state.currentQuestion.region]: Math.min(100, state.worldState.regionProgress[state.currentQuestion.region] + JOURNEY_PROGRESS_DELTA),
+          [region]: Math.min(100, state.worldState.regionProgress[region] + JOURNEY_PROGRESS_DELTA),
         },
-        regionStates: { ...state.worldState.regionStates, [state.currentQuestion.region]: similarity >= SIMILARITY_THRESHOLD.HIGH ? 'bright' : 'growth' },
-        visitedRegions: Array.from(new Set([...state.worldState.visitedRegions, state.currentQuestion.region])),
+        regionStates: { ...state.worldState.regionStates, [region]: similarity >= SIMILARITY_THRESHOLD.HIGH ? 'bright' : 'growth' },
+        visitedRegions: Array.from(new Set([...state.worldState.visitedRegions, region])),
         worldChanges: [
           ...state.worldState.worldChanges,
-          { area: state.currentQuestion.region, message: state.currentQuestion.worldEffect?.message ?? insights.emotion, progressDelta: JOURNEY_PROGRESS_DELTA },
+          { area: region, message: state.currentQuestion.worldEffect?.message ?? insights.emotion, progressDelta: JOURNEY_PROGRESS_DELTA },
         ],
       },
     });
   },
-  goToNextQuestion: () => {
+  goToNextQuestion: async () => {
     const state = get();
     if (!state.currentQuestion) return;
     const history = [...state.journeyHistory, { question: state.currentQuestion, answers: state.abAnswers, completedAt: new Date().toISOString() }];
@@ -302,14 +382,7 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
     const shouldStartMirrorEvent = Boolean(state.mirrorEvent.signal?.trigger && !state.mirrorEvent.completed && !state.mirrorEvent.skipped);
 
     if (shouldStartMirrorEvent) {
-      const nextQuestion = generateQuestion({
-        stage: state.relationshipStage,
-        goal: state.goal,
-        areas: state.route.areas.length > 0 ? state.route.areas : [state.worldState.currentRegion],
-        currentQuestionIndex: nextIndex,
-        moment: state.presentMoment,
-        history: history.map((item) => item.question.question),
-      });
+      const nextQuestion = await generateQuestionWithAiFallback(state, nextIndex, history.map((item) => item.question.question));
       const event = createMirrorEvent(state.mirrorEvent.memorySeed);
       set({
         journeyHistory: history,
@@ -324,17 +397,10 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
       return;
     }
 
-    const question = generateQuestion({
-      stage: state.relationshipStage,
-      goal: state.goal,
-      areas: state.route.areas.length > 0 ? state.route.areas : [state.worldState.currentRegion],
-      currentQuestionIndex: nextIndex,
-      moment: state.presentMoment,
-      history: history.map((item) => item.question.question),
-    });
+    const question = await generateQuestionWithAiFallback(state, nextIndex, history.map((item) => item.question.question));
     set({ journeyHistory: history, currentQuestionIndex: nextIndex, currentQuestion: question, abAnswers: defaultABAnswers });
   },
-  endJourney: () => {
+  endJourney: async () => {
     const state = get();
     const history = state.currentQuestion && state.abAnswers.revealVisible
       ? [...state.journeyHistory, { question: state.currentQuestion, answers: state.abAnswers, completedAt: new Date().toISOString() }]
@@ -371,14 +437,42 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
     });
     saveStats(nextStats);
     saveWorldState(state.worldState);
+    saveSnapshot({
+      regionProgress: { ...state.worldState.regionProgress },
+      resonance: lastItem.answers.insights?.resonance ?? '',
+      eventCount: state.events.length,
+    });
+    recordExplorationCompleted();
+    let aiSummary: Partial<SummaryData> = {};
+    try {
+      aiSummary = await generateAiSummary({
+        stage: state.relationshipStage,
+        goal: state.goal,
+        route: state.route,
+        moment: state.presentMoment,
+        history,
+        events: state.events,
+      });
+    } catch {
+      aiSummary = {
+        resonance: lastItem.answers.insights?.resonance ?? '',
+        differences: lastItem.answers.insights?.difference ?? '',
+        nextTopic: lastItem.answers.insights?.suggestion ?? '',
+        actionSuggestion: lastItem.answers.insights?.suggestion ?? '',
+        generatedBy: 'rules',
+      };
+    }
     set({
       journeyHistory: history,
       summary: {
         route: state.route,
-        resonance: lastItem.answers.insights?.resonance ?? '',
+        resonance: aiSummary.resonance ?? lastItem.answers.insights?.resonance ?? '',
+        differences: aiSummary.differences ?? lastItem.answers.insights?.difference ?? '',
         discoveries: unlockResult.newItems.map((item) => item.id),
         worldChanges: state.worldState.worldChanges,
-        nextTopic: lastItem.answers.insights?.suggestion ?? '',
+        nextTopic: aiSummary.nextTopic ?? lastItem.answers.insights?.suggestion ?? '',
+        actionSuggestion: aiSummary.actionSuggestion ?? lastItem.answers.insights?.suggestion ?? '',
+        generatedBy: aiSummary.generatedBy ?? 'rules',
         moment: state.presentMoment,
         events: state.events,
       },

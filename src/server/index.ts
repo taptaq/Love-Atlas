@@ -3,9 +3,15 @@ import { stat } from 'node:fs/promises';
 import { createServer, type ServerResponse } from 'node:http';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handleAiRouteApi } from './aiRouteService';
-import { handleSessionApi } from './sessionApi';
-import { handleSpaceApi } from './spaceApi';
+import { loadServerEnv } from './env';
+
+loadServerEnv();
+
+const { handleAiRouteApi } = await import('./aiRouteService');
+const { handleAiJourneyApi } = await import('./aiJourneyService');
+const { handleAiVisionApi } = await import('./aiVisionService');
+const { handleSessionApi } = await import('./sessionApi');
+const { handleSpaceApi } = await import('./spaceApi');
 
 const root = join(fileURLToPath(new URL('../..', import.meta.url)), 'dist');
 const port = Number(process.env.PORT ?? 4173);
@@ -34,7 +40,7 @@ async function serveStatic(pathname: string, response: ServerResponse) {
 }
 
 createServer(async (request, response) => {
-  const handled = (await handleAiRouteApi(request, response)) || (await handleSpaceApi(request, response)) || (await handleSessionApi(request, response));
+  const handled = (await handleAiRouteApi(request, response)) || (await handleAiVisionApi(request, response)) || (await handleAiJourneyApi(request, response)) || (await handleSpaceApi(request, response)) || (await handleSessionApi(request, response));
   if (handled) return;
 
   try {
@@ -45,5 +51,5 @@ createServer(async (request, response) => {
     response.end('Not found');
   }
 }).listen(port, () => {
-  console.log(`Relationship OS server listening on http://localhost:${port}`);
+  console.log(`Love Atlas server listening on http://localhost:${port}`);
 });

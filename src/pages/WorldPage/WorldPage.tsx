@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
+import { GrowthCurve } from '../../components/ui/GrowthCurve';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
+import { RelationshipHealth } from '../../components/ui/RelationshipHealth';
+import { TermTooltip } from '../../components/ui/TermTooltip';
 import { discoveryPool } from '../../features/discovery/discoveryPool';
 import { mapAreaConfig } from '../../features/map/map.config';
 import { useDiscoveryStore, useJourneyStore, useUiStore } from '../../store';
@@ -42,11 +45,11 @@ export function WorldPage() {
 
   return (
     <main className="page flow-page world-page">
-      <LoadingOverlay visible={isLoading} message={language === 'cn' ? '加载中…' : 'Loading…'} />
+      <LoadingOverlay visible={isLoading} message={language === 'cn' ? '正在加载关系世界…' : 'Loading relationship world…'} />
       <button className="back-link" type="button" onClick={() => goToStep('home')}>← {language === 'cn' ? '返回' : 'Back'}</button>
 
       <section className="flow-header">
-        <span className="step-pill">{language === 'cn' ? '关系世界' : 'Relationship World'}</span>
+        <span className="step-pill">{language === 'cn' ? <TermTooltip explanation={{ cn: '你们每次探索后共同积累的关系地图，会随对话不断变化', en: 'A shared relationship map that evolves with every exploration' }}>关系世界</TermTooltip> : 'Relationship World'}</span>
         <h1>{language === 'cn' ? '我们的关系世界' : 'Our Relationship World'}</h1>
         <p>{language === 'cn' ? '每一次回答、事件和发现都会让地图发生变化。' : 'Every answer, event, and discovery changes the map.'}</p>
       </section>
@@ -75,6 +78,10 @@ export function WorldPage() {
         <h2>{atlasState.unlocked.length} / {discoveryPool.length}</h2>
         <div className="similarity-meter"><span style={{ width: `${discoveryProgress}%` }} /></div>
       </section>
+
+      <GrowthCurve language={language} />
+
+      <RelationshipHealth language={language} />
 
       <section className="world-map-grid">
         {areaOrder.map((area) => {

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { analyzeMomentImageWithCloud } from '../../features/presentMoment/cloudVisionService';
 import { generateAiRoute } from '../../features/relationship/aiRouteService';
 import { mapAreaConfig } from '../../features/map/map.config';
 import { getMomentInfluence, inferImageTags } from '../../features/presentMoment/presentMomentEngine';
+import { recognizeMomentImageText } from '../../features/presentMoment/localOcrService';
 import { getGoalOption, getStageOption } from '../../features/relationship/relationship.config';
 import { getRecommendedRouteAreas } from '../../features/relationship/routePlanner';
 import { uploadPresentMomentImage } from '../../features/session/storageService';
@@ -19,6 +21,34 @@ const scenes: Array<{ id: MomentScene; icon: string; cn: string; en: string }> =
 ];
 
 type MomentAction = 'none' | 'scene' | 'text' | 'image';
+
+const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+function formatFileSize(bytes: number) {
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function isHeicFile(file: File) {
+  return /image\/hei[cf]/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
+}
+
+async function convertHeicToJpeg(file: File) {
+  if (!isHeicFile(file)) return file;
+  const { default: heic2any } = await import('heic2any');
+  const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+  const blob = Array.isArray(converted) ? converted[0] : converted;
+  const baseName = file.name.replace(/\.(heic|heif)$/i, '') || 'moment-image';
+  return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
+}
 
 export function RoutePage() {
   const language = useUiStore((state) => state.language);
@@ -79,53 +109,159 @@ export function RoutePage() {
     appliedHintTimer.current = window.setTimeout(() => setAppliedHint(''), 2000);
   };
 
+  const clearMomentHint = () => {
+    window.clearTimeout(appliedHintTimer.current);
+    setAppliedHint('');
+  };
+
   const applyMoment = (scene: MomentScene) => {
-    const routeInfluence = getMomentInfluence(scene, momentText, presentMoment.imageTags);
+    const combinedMomentText = [momentText, presentMoment.imageOcrText].filter(Boolean).join(' ');
+    const routeInfluence = getMomentInfluence(scene, combinedMomentText, presentMoment.imageTags);
     applyPresentMoment({ scene, text: momentText, routeInfluence });
     showAppliedHint(language === 'cn' ? '场景已应用' : 'Scene applied');
   };
 
   const applyTextMoment = () => {
     if (!momentText.trim()) return;
-    const routeInfluence = getMomentInfluence(presentMoment.scene, momentText, presentMoment.imageTags);
-    applyPresentMoment({ text: momentText, routeInfluence });
+    const imageTags = presentMoment.image
+      ? inferImageTags(presentMoment.image, momentText, presentMoment.imageOcrText)
+      : presentMoment.imageTags;
+    const combinedMomentText = [momentText, presentMoment.imageOcrText].filter(Boolean).join(' ');
+    const routeInfluence = getMomentInfluence(presentMoment.scene, combinedMomentText, imageTags);
+    applyPresentMoment({ text: momentText, imageTags, routeInfluence });
     showAppliedHint(language === 'cn' ? '句子已应用' : 'Note applied');
   };
 
   const skipMoment = () => {
+    clearMomentHint();
     setActiveMomentAction('none');
     setMomentText('');
-    applyPresentMoment({ scene: '', text: '', image: null, imagePreview: '', imageTags: [], captureMode: null, routeInfluence: null });
+    applyPresentMoment({ scene: '', text: '', image: null, imagePreview: '', imageTags: [], imageCaption: '', imageUnderstandingSource: null, imageOcrText: '', imageOcrConfidence: null, imageOcrStatus: 'idle', captureMode: null, routeInfluence: null });
     showAppliedHint(language === 'cn' ? '已跳过此刻信息' : 'Moment skipped');
   };
 
-  const handleImageUpload = (file: File | undefined) => {
+  const handleImageUpload = async (file: File | undefined) => {
     if (!file) return;
+    if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+      showAppliedHint(language === 'cn'
+        ? `图片不能超过 10MB，当前 ${formatFileSize(file.size)}`
+        : `Image must be under 10MB. Current size: ${formatFileSize(file.size)}`);
+      return;
+    }
     setImageUploading(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const localPreview = typeof reader.result === 'string' ? reader.result : '';
-      let imagePreview = localPreview;
+    let momentFile = file;
+    let localPreview = '';
+    let imagePreview = '';
+
+    try {
+      if (isHeicFile(file)) {
+        showAppliedHint(language === 'cn' ? '正在将 HEIC 转为 JPG…' : 'Converting HEIC to JPG...');
+      }
+      momentFile = await convertHeicToJpeg(file);
+      if (momentFile.size > MAX_IMAGE_UPLOAD_BYTES) {
+        showAppliedHint(language === 'cn'
+          ? `转换后的图片超过 10MB，当前 ${formatFileSize(momentFile.size)}`
+          : `Converted image is over 10MB. Current size: ${formatFileSize(momentFile.size)}`);
+        setImageUploading(false);
+        return;
+      }
+      localPreview = await readFileAsDataUrl(momentFile);
+      imagePreview = localPreview;
+
       try {
-        imagePreview = (await uploadPresentMomentImage(sessionId, file)) ?? localPreview;
+        imagePreview = (await uploadPresentMomentImage(sessionId, momentFile)) ?? localPreview;
       } catch {
         imagePreview = localPreview;
-      } finally {
-        setImageUploading(false);
       }
-      const imageTags = inferImageTags(file.name, momentText);
-      const routeInfluence = getMomentInfluence(presentMoment.scene, momentText, imageTags);
+    } catch {
+      showAppliedHint(isHeicFile(file)
+        ? (language === 'cn' ? '这张 HEIC 暂时无法转换，请导出为 JPG/PNG 后再试' : 'This HEIC image could not be converted. Please export it as JPG/PNG and try again')
+        : (language === 'cn' ? '图片读取失败，请换一张图片再试' : 'Image read failed, please try another image'));
+      setImageUploading(false);
+      return;
+    } finally {
+      setImageUploading(false);
+    }
+
+    const imageTags = inferImageTags(momentFile.name, momentText);
+    const routeInfluence = getMomentInfluence(presentMoment.scene, momentText, imageTags);
+    applyPresentMoment({
+      text: momentText,
+      image: momentFile.name,
+      imagePreview,
+      imageTags,
+      imageCaption: '',
+      imageUnderstandingSource: 'heuristic',
+      imageOcrText: '',
+      imageOcrConfidence: null,
+      imageOcrStatus: 'recognizing',
+      captureMode: 'upload',
+      routeInfluence,
+    });
+    showAppliedHint(language === 'cn' ? '图片已应用，正在优先调用云端视觉理解' : 'Image applied, cloud vision is analyzing first');
+
+    try {
+      const cloudResult = await analyzeMomentImageWithCloud({
+        imageDataUrl: localPreview,
+        fileName: momentFile.name,
+        momentText,
+        ocrText: '',
+        language,
+      });
       applyPresentMoment({
         text: momentText,
-        image: file.name,
+        image: momentFile.name,
         imagePreview,
-        imageTags,
+        imageTags: cloudResult.tags ?? [],
+        imageCaption: cloudResult.caption,
+        imageUnderstandingSource: 'cloud-vlm',
+        imageOcrStatus: 'recognizing',
         captureMode: 'upload',
-        routeInfluence,
+        routeInfluence: {
+          primaryArea: cloudResult.area,
+          reason: cloudResult.reason || cloudResult.caption || (language === 'cn' ? '云端视觉模型已根据图片调整路线。' : 'Cloud vision adjusted the route from the image.'),
+          weight: 0.84,
+        },
       });
-      showAppliedHint(language === 'cn' ? '图片已应用' : 'Image applied');
-    };
-    reader.readAsDataURL(file);
+      showAppliedHint(language === 'cn' ? '云端视觉理解已应用到路线' : 'Cloud vision applied to route');
+    } catch {
+      showAppliedHint(language === 'cn' ? '云端视觉暂不可用，已保留基础图片线索' : 'Cloud vision unavailable, basic image cues kept');
+    }
+
+    try {
+      const ocr = await recognizeMomentImageText(momentFile);
+      const cloudTags = useJourneyStore.getState().presentMoment.imageUnderstandingSource === 'cloud-vlm'
+        ? (useJourneyStore.getState().presentMoment.imageTags ?? [])
+        : [];
+      const ocrTags = Array.from(new Set([...cloudTags, ...inferImageTags(momentFile.name, momentText, ocr.text)]));
+      const combinedMomentText = [momentText, ocr.text].filter(Boolean).join(' ');
+      const currentMoment = useJourneyStore.getState().presentMoment;
+      const ocrRouteInfluence = currentMoment.imageUnderstandingSource === 'cloud-vlm'
+        ? currentMoment.routeInfluence
+        : getMomentInfluence(presentMoment.scene, combinedMomentText, ocrTags);
+      applyPresentMoment({
+        text: momentText,
+        image: momentFile.name,
+        imagePreview,
+        imageTags: ocrTags,
+        imageUnderstandingSource: currentMoment.imageUnderstandingSource === 'cloud-vlm' ? 'cloud-vlm' : 'local-ocr',
+        imageOcrText: ocr.text,
+        imageOcrConfidence: ocr.confidence,
+        imageOcrStatus: 'done',
+        captureMode: 'upload',
+        routeInfluence: ocrRouteInfluence,
+      });
+      showAppliedHint(ocr.text
+        ? (language === 'cn' ? '图片文字线索已补充到路线' : 'Image text cues added to route')
+        : (language === 'cn' ? '图片理解已完成' : 'Image understanding complete'));
+    } catch {
+      applyPresentMoment({
+        imageOcrText: '',
+        imageOcrConfidence: null,
+        imageOcrStatus: 'error',
+      });
+      showAppliedHint(language === 'cn' ? '图片文字识别未完成，已保留基础图片标签' : 'Image text recognition unavailable, image tags kept');
+    }
   };
 
   return (
@@ -185,20 +321,20 @@ export function RoutePage() {
             <strong>{language === 'cn' ? '暂不补充' : 'Skip for now'}</strong>
             <small>{language === 'cn' ? '直接使用当前路线' : 'Use the route as is'}</small>
           </button>
-          <button className={activeMomentAction === 'scene' ? 'selected' : ''} type="button" onClick={() => setActiveMomentAction('scene')}>
+          <button className={activeMomentAction === 'scene' ? 'selected' : ''} type="button" onClick={() => { clearMomentHint(); applyPresentMoment({ imageOcrStatus: 'idle', imageOcrText: '', imageOcrConfidence: null }); setActiveMomentAction('scene'); }}>
             <span>📍</span>
             <strong>{language === 'cn' ? '选择场景' : 'Choose scene'}</strong>
             <small>{language === 'cn' ? '用所在场景修正路线' : 'Shape the route by place'}</small>
           </button>
-          <button className={activeMomentAction === 'text' ? 'selected' : ''} type="button" onClick={() => setActiveMomentAction('text')}>
+          <button className={activeMomentAction === 'text' ? 'selected' : ''} type="button" onClick={() => { clearMomentHint(); applyPresentMoment({ imageOcrStatus: 'idle', imageOcrText: '', imageOcrConfidence: null }); setActiveMomentAction('text'); }}>
             <span>✍️</span>
             <strong>{language === 'cn' ? '写一句话' : 'Write a note'}</strong>
             <small>{language === 'cn' ? '记录刚刚发生的事' : 'Capture what just happened'}</small>
           </button>
-          <button className={activeMomentAction === 'image' ? 'selected' : ''} type="button" onClick={() => setActiveMomentAction('image')}>
+          <button className={activeMomentAction === 'image' ? 'selected' : ''} type="button" onClick={() => { clearMomentHint(); setActiveMomentAction('image'); }}>
             <span>🖼️</span>
             <strong>{language === 'cn' ? '上传图片' : 'Upload image'}</strong>
-            <small>{language === 'cn' ? '从图片推断此刻标签' : 'Infer tags from an image'}</small>
+            <small>{language === 'cn' ? '支持 JPG/PNG/HEIC，10MB 内' : 'JPG, PNG, or HEIC under 10MB'}</small>
           </button>
         </div>
 
@@ -232,8 +368,8 @@ export function RoutePage() {
         {activeMomentAction === 'image' && (
           <div className="moment-action-panel">
             <label className="moment-upload">
-              <span>{language === 'cn' ? '上传此刻图片' : 'Upload moment image'}</span>
-              <input accept="image/*" type="file" onChange={(event) => handleImageUpload(event.target.files?.[0])} />
+              <span>{language === 'cn' ? '上传此刻图片（≤10MB）' : 'Upload moment image (≤10MB)'}</span>
+              <input accept="image/*,.heic,.heif" type="file" onChange={(event) => { void handleImageUpload(event.target.files?.[0]); event.currentTarget.value = ''; }} />
             </label>
           </div>
         )}
@@ -243,7 +379,10 @@ export function RoutePage() {
             <img alt={language === 'cn' ? '此刻图片预览' : 'Moment preview'} src={presentMoment.imagePreview} />
             <div>
               <strong>{presentMoment.image}</strong>
-              <p>{presentMoment.imageTags.map((tag) => `#${tag}`).join(' ')}</p>
+              <p>{(presentMoment.imageTags ?? []).filter((tag) => tag !== 'ocr-text').map((tag) => `#${tag}`).join(' ')}</p>
+              {presentMoment.imageUnderstandingSource === 'cloud-vlm' && (
+                <p>{language === 'cn' ? '云端视觉理解：' : 'Cloud vision: '}{presentMoment.imageCaption || presentMoment.routeInfluence?.reason}</p>
+              )}
             </div>
           </div>
         )}

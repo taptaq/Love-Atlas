@@ -1,7 +1,27 @@
 import type { RelationshipSharedState } from '../../types/session';
 import type { ExplorationDetailResult, ExplorationListResult, ExplorationStateResult, SpaceApiResult, SpaceLibraryResult, SpaceManagementResult, UnbindSpaceResult } from '../../types/space';
+import { requestAuthPopover } from '../../components/auth/AuthButton';
 import { supabase } from '../../lib/supabase';
+import { useAuthStore } from '../auth/useAuthStore';
 import { createParticipantId } from '../session/sessionService';
+
+let authFailurePrompted = false;
+
+// 登录成功后重置标记，允许后续再次提示
+useAuthStore.subscribe((state) => {
+  if (state.user) authFailurePrompted = false;
+});
+
+function handleAuthFailure() {
+  const { user, signOut } = useAuthStore.getState();
+  if (user) {
+    void signOut();
+  }
+  if (user && !authFailurePrompted) {
+    authFailurePrompted = true;
+    requestAuthPopover();
+  }
+}
 
 async function createHeaders() {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
@@ -16,12 +36,20 @@ async function postJson<T>(url: string, body: unknown) {
     headers: await createHeaders(),
     body: JSON.stringify(body),
   });
+  if (response.status === 401) {
+    handleAuthFailure();
+    throw new Error('登录已过期，请重新登录后再试。');
+  }
   if (!response.ok) throw new Error(await readErrorMessage(response));
   return response.json() as Promise<T>;
 }
 
 async function getJson<T>(url: string) {
   const response = await fetch(url, { headers: await createHeaders() });
+  if (response.status === 401) {
+    handleAuthFailure();
+    throw new Error('登录已过期，请重新登录后再试。');
+  }
   if (!response.ok) throw new Error(await readErrorMessage(response));
   return response.json() as Promise<T>;
 }

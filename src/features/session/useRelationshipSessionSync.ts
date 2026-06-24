@@ -48,9 +48,20 @@ function serializeState(state: RelationshipSharedState | null | undefined): stri
   }
 }
 
+function handleSyncError(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  if (!/Exploration not found|Space not found|Only active space members/i.test(message)) return false;
+  useSpaceStore.getState().clearSpace();
+  useSessionStore.getState().clearSession();
+  useJourneyStore.getState().resetJourney();
+  useJourneyStore.getState().goToStep('home');
+  return true;
+}
+
 export function useRelationshipSessionSync() {
   const sessionId = useSessionStore((state) => state.session?.id);
   const explorationId = useSpaceStore((state) => state.exploration?.id);
+  const isCompanion = useSpaceStore((state) => state.isCompanion);
   const isHydratingRef = useRef(false);
   const lastSyncedRef = useRef<string>('');
   const pendingSaveRef = useRef<RelationshipSharedState | null>(null);
@@ -59,6 +70,12 @@ export function useRelationshipSessionSync() {
 
   useEffect(() => {
     if (!sessionId) return;
+
+    // 虚拟伴侣模式：没有真实对方，不需要持续同步（节省 API 调用和 WebSocket 资源）
+    if (isCompanion) {
+      useUiStore.getState().setSyncStatus('online');
+      return;
+    }
 
     // 0. 页面加载/刷新时立即从服务端拉取最新状态，校准本地
     const initialSync = async () => {
@@ -76,9 +93,11 @@ export function useRelationshipSessionSync() {
           });
           activityRef.current += 1;
         }
-      } catch {
-        // 初始同步失败，标记错误状态
-        useUiStore.getState().setSyncStatus('error');
+      } catch (error) {
+        if (!handleSyncError(error)) {
+          // 初始同步失败，标记错误状态
+          useUiStore.getState().setSyncStatus('error');
+        }
       }
     };
     void initialSync();
@@ -177,9 +196,11 @@ export function useRelationshipSessionSync() {
               activityRef.current += 1; // 收到远端更新，保持快速轮询
             }
           }
-        } catch {
-          // 轮询失败，标记错误状态
-          useUiStore.getState().setSyncStatus('error');
+        } catch (error) {
+          if (!handleSyncError(error)) {
+            // 轮询失败，标记错误状态
+            useUiStore.getState().setSyncStatus('error');
+          }
         }
         nextDelay = activityRef.current > 0 || wasActive ? 300 : 2000;
         poll();
@@ -195,8 +216,34 @@ export function useRelationshipSessionSync() {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // 5. 离线/在线检测
-    const handleOnline = () => useUiStore.getState().setSyncStatus('online');
+    // 5. 离线/在线检测 + 重连自动同步
+    const handleOnline = async () => {
+      useUiStore.getState().setSyncStatus('syncing');
+      try {
+        // 立即拉取服务端最新状态，处理离线期间的远端变更
+        const sharedState = explorationId
+          ? (await loadExplorationSharedState(explorationId)).sharedState
+          : await loadRelationshipSharedState(sessionId);
+        if (sharedState) {
+          const serialized = serializeState(sharedState);
+          if (serialized !== lastSyncedRef.current) {
+            lastSyncedRef.current = serialized;
+            isHydratingRef.current = true;
+            useJourneyStore.getState().hydrateSharedState(sharedState);
+            queueMicrotask(() => {
+              isHydratingRef.current = false;
+            });
+          }
+        }
+        // flush 离线期间积压的本地变更
+        if (pendingSaveRef.current) {
+          await flushSave();
+        }
+        useUiStore.getState().setSyncStatus('reconnected');
+      } catch {
+        useUiStore.getState().setSyncStatus('error');
+      }
+    };
     const handleOffline = () => useUiStore.getState().setSyncStatus('offline');
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -210,5 +257,5 @@ export function useRelationshipSessionSync() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [sessionId, explorationId]);
+  }, [sessionId, explorationId, isCompanion]);
 }

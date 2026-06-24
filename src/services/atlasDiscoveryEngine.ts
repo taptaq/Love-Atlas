@@ -168,13 +168,3 @@ export function getLatestDiscovery(): DiscoveryItem | null {
   if (!latest) return null;
   return discoveryPool.find((item) => item.id === latest.id) ?? null;
 }
-
-export function getDiscoveriesByUnlockTime(unlockTime: string): DiscoveryItem[] {
-  const state = loadAtlasState();
-  const ids = state.unlocked.filter((item) => item.unlockedAt === unlockTime).map((item) => item.id);
-  return discoveryPool.filter((item) => ids.includes(item.id));
-}
-
-export function totalCount(): number {
-  return discoveryPool.length;
-}

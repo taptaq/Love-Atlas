@@ -46,6 +46,14 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:6543/postgres?pgbouncer=true"
 DIRECT_URL="postgresql://USER:PASSWORD@HOST:5432/postgres"
+
+DEEPSEEK_API_KEY="sk-..."
+
+# 可选：MiniCPM-V / 云端托管视觉模型，需兼容 OpenAI chat/completions。
+# 未配置时，图片理解会降级为本地 OCR + 关键词标签。
+MINICPM_V_API_URL="https://your-provider.example.com/v1/chat/completions"
+MINICPM_V_API_KEY="sk-..."
+MINICPM_V_MODEL="openbmb/MiniCPM-V-4_5"
 ```
 
 启动前端开发服务：
@@ -84,6 +92,7 @@ Supabase 相关 SQL 文件在：
 
 - `supabase/schema.sql`
 - `supabase/rls.sql`
+- `supabase/storage.sql`：创建 `present-moment` Storage bucket 与上传/读取策略。
 
 ## 构建与预览
 

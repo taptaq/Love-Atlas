@@ -60,9 +60,12 @@ export interface JourneyHistoryItem {
 export interface SummaryData {
   route: JourneyRoute;
   resonance: string;
+  differences?: string;
   discoveries: string[];
   worldChanges: WorldChange[];
   nextTopic: string;
+  actionSuggestion?: string;
+  generatedBy?: 'ai' | 'rules';
   moment?: PresentMomentState;
   events: RelationshipEvent[];
 }

@@ -13,10 +13,14 @@ const HEARTBEAT_INTERVAL = 15000; // 15 秒心跳
  */
 export function useSpacePresenceHeartbeat() {
   const space = useSpaceStore((state) => state?.space ?? null);
+  const isCompanion = useSpaceStore((state) => state?.isCompanion ?? false);
   const user = useAuthStore((state) => state?.user ?? null);
 
   useEffect(() => {
     if (!space) return;
+    // 虚拟伴侣模式：没有真实对方，不需要心跳
+    if (isCompanion) return;
+
     let cancelled = false;
     const heartbeat = () => {
       if (!cancelled) void sendSpaceHeartbeat(space.id, user?.id).catch(() => undefined);
@@ -28,5 +32,5 @@ export function useSpacePresenceHeartbeat() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [space, user]);
+  }, [space, user, isCompanion]);
 }

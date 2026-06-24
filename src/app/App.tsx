@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { AuthButton } from '../components/auth/AuthButton';
 import { LanguageToggle } from '../components/ui/LanguageToggle';
 import { SyncStatusIndicator } from '../components/ui/SyncStatusIndicator';
+import { ThemeToggle } from '../components/ui/ThemeToggle';
 import { useAuthStore } from '../features/auth/useAuthStore';
 import { useRelationshipSessionSync } from '../features/session/useRelationshipSessionSync';
 import { useSpacePresenceHeartbeat } from '../features/session/useSpacePresenceHeartbeat';
@@ -67,7 +68,7 @@ export function App() {
 
   useEffect(() => {
     const titles: Record<string, { cn: string; en: string }> = {
-      home: { cn: 'Love Atlas · 爱的地图', en: 'Love Atlas' },
+      home: { cn: 'Love Atlas · 深度对话启动器', en: 'Love Atlas · Deep Conversation Starter' },
       setup: { cn: '关系阶段 · Love Atlas', en: 'Setup · Love Atlas' },
       goal: { cn: '探索目标 · Love Atlas', en: 'Goal · Love Atlas' },
       route: { cn: '地图路线 · Love Atlas', en: 'Route · Love Atlas' },
@@ -91,6 +92,7 @@ export function App() {
       <StarBackground />
       <header className="app-header">
         <LanguageToggle />
+        <ThemeToggle />
         <AuthButton />
       </header>
       <SyncStatusIndicator />

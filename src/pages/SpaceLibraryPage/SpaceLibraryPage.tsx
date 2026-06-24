@@ -4,6 +4,7 @@ import { useSpaceStore } from '../../features/session/useSpaceStore';
 import { t } from '../../i18n';
 import { formatDate, readableList } from '../../lib/format';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
+import { friendlyError } from '../../utils/friendlyError';
 import { useJourneyStore, useUiStore } from '../../store';
 import type { SpaceLibraryResult } from '../../types/space';
 
@@ -21,7 +22,7 @@ export function SpaceLibraryPage() {
       return;
     }
     setIsLoading(true);
-    void loadSpaceLibrary(space.id).then(setLibrary).catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to load library')).finally(() => setIsLoading(false));
+    void loadSpaceLibrary(space.id).then(setLibrary).catch((error) => setMessage(friendlyError(error, language))).finally(() => setIsLoading(false));
   }, [space]);
 
   return (

@@ -12,7 +12,7 @@ function loadLanguage(): Language {
   }
 }
 
-export type SyncStatus = 'online' | 'offline' | 'syncing' | 'error';
+export type SyncStatus = 'online' | 'offline' | 'syncing' | 'error' | 'reconnected';
 
 interface UiStore {
   language: Language;

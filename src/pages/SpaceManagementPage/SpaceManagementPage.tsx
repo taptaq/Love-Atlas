@@ -6,6 +6,7 @@ import { useSpaceStore } from '../../features/session/useSpaceStore';
 import { t } from '../../i18n';
 import { formatDate, presenceLabel } from '../../lib/format';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
+import { friendlyError } from '../../utils/friendlyError';
 import { useJourneyStore, useUiStore } from '../../store';
 import type { SpaceManagementResult } from '../../types/space';
 
@@ -28,7 +29,7 @@ export function SpaceManagementPage() {
       return;
     }
     setIsLoading(true);
-    void loadSpaceManagement(space.id).then(setDetail).catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to load space')).finally(() => setIsLoading(false));
+    void loadSpaceManagement(space.id).then(setDetail).catch((error) => setMessage(friendlyError(error, language))).finally(() => setIsLoading(false));
   }, [space]);
 
   const handleCopyInvite = async () => {
@@ -52,7 +53,7 @@ export function SpaceManagementPage() {
         goToStep('home');
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : (language === 'cn' ? '解绑失败，请稍后重试' : 'Unbind failed, please try again'));
+      setMessage(friendlyError(error, language));
     } finally {
       setIsUnbinding(false);
     }

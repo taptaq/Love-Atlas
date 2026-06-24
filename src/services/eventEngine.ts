@@ -1,4 +1,5 @@
 import type { EventType, LocalizedText, MapArea, QuestionType, RelationshipEvent } from '../types';
+import { MIRROR_TRIGGER_SIMILARITY, HIGH_RESONANCE_SIMILARITY, FOREST_MIRROR_THRESHOLD } from '../features/relationship/journeyConfig';
 
 function text(cn: string, en: string): LocalizedText {
   return { cn, en };
@@ -78,11 +79,11 @@ export function generateRelationshipEvent(input: {
   memorySeed?: string;
 }): RelationshipEvent | null {
   if (input.forceMirror) return createMirrorEvent(input.memorySeed ?? '');
-  if (input.questionType === 'mirror' && input.similarity < 42) return createMirrorEvent(input.memorySeed ?? '');
+  if (input.questionType === 'mirror' && input.similarity < MIRROR_TRIGGER_SIMILARITY) return createMirrorEvent(input.memorySeed ?? '');
   if (input.hasMoment && input.region === 'valley') return withRuntime(eventTemplates.moment);
-  if (input.similarity > 72 && input.region !== 'city') return null;
+  if (input.similarity > HIGH_RESONANCE_SIMILARITY && input.region !== 'city') return null;
   const eventType = regionEventMap[input.region];
-  if (eventType === 'mirror') return input.similarity < 55 ? createMirrorEvent(input.memorySeed ?? '') : null;
+  if (eventType === 'mirror') return input.similarity < FOREST_MIRROR_THRESHOLD ? createMirrorEvent(input.memorySeed ?? '') : null;
   if (eventType === 'future' && input.questionType !== 'choice') return null;
   return withRuntime(eventTemplates[eventType]);
 }

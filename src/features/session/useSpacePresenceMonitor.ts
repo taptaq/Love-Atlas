@@ -18,6 +18,7 @@ const STALE_THRESHOLD = 45000; // 45 秒无心跳视为离线（3 倍心跳间�
  */
 export function useSpacePresenceMonitor() {
   const space = useSpaceStore((state) => state?.space ?? null);
+  const isCompanion = useSpaceStore((state) => state?.isCompanion ?? false);
   const user = useAuthStore((state) => state?.user ?? null);
   const prevMemberCountRef = useRef(0);
   const [memberCount, setMemberCount] = useState(0);
@@ -35,6 +36,12 @@ export function useSpacePresenceMonitor() {
     if (!space) {
       prevMemberCountRef.current = 0;
       setMemberCount(0);
+      return;
+    }
+
+    // 虚拟伴侣模式：没有真实对方，不需要轮询成员状态
+    if (isCompanion) {
+      setMemberCount(2);
       return;
     }
 
@@ -107,7 +114,7 @@ export function useSpacePresenceMonitor() {
     void checkMembers();
     const timer = window.setInterval(checkMembers, POLL_INTERVAL);
     return () => window.clearInterval(timer);
-  }, [space?.id, user?.id]);
+  }, [space?.id, user?.id, isCompanion]);
 
   return memberCount;
 }

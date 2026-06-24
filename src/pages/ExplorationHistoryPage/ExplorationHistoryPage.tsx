@@ -90,9 +90,11 @@ export function ExplorationHistoryPage() {
               </div>
             ) : explorations.map((item, index) => (
               <button className={selectedExplorationId === item.id ? 'history-item history-item-active' : 'history-item'} type="button" key={item.id} onClick={() => void handleSelectExploration(item.id)}>
-                <strong>{language === 'cn' ? `探索 ${explorations.length - index}` : `Exploration ${explorations.length - index}`}</strong>
-                <span>{formatDate(language, item.created_at)}</span>
-                <small>{item.goal ?? item.current_step}</small>
+                <div className="history-item-head">
+                  <strong>{language === 'cn' ? `探索 ${explorations.length - index}` : `Exploration ${explorations.length - index}`}</strong>
+                  <span>{formatDate(language, item.created_at)}</span>
+                </div>
+                {(item.goal || item.current_step) && <small className="history-item-goal">{item.goal ?? item.current_step}</small>}
               </button>
             ))}
           </div>

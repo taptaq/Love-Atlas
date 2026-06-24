@@ -260,8 +260,11 @@ export function generateQuestion(input: GenerateQuestionInput): JourneyQuestion 
 function enhanceWithMoment(questionData: JourneyQuestion, moment: PresentMomentState): JourneyQuestion {
   const sceneMap = moment.scene ? MOMENT_SCENE_MAP[moment.scene] : undefined;
   let question = questionData.question;
+  const momentPhrase = getMomentPhrase(moment);
   if (sceneMap && !question.includes(sceneMap.prefix)) {
     question = question.replace(/^(如果|最近|有什么|你觉得|想到|当|哪)/, `$1${sceneMap.prefix}，`);
+  } else if (momentPhrase && !question.includes(momentPhrase)) {
+    question = `从「${momentPhrase}」这个此刻出发，${question}`;
   }
 
   let emotion = sceneMap?.emotion ?? questionData.emotion;
@@ -276,6 +279,12 @@ function enhanceWithMoment(questionData: JourneyQuestion, moment: PresentMomentS
     emotion,
     region: moment.routeInfluence?.primaryArea ?? sceneMap?.region ?? questionData.region,
   };
+}
+
+function getMomentPhrase(moment: PresentMomentState) {
+  const source = moment.text || moment.imageCaption;
+  if (!source.trim()) return '';
+  return source.trim().replace(/\s+/g, ' ').slice(0, 24);
 }
 
 function avoidRepeat(templates: QuestionTemplate[], history: string[]): QuestionTemplate[] {
@@ -303,21 +312,6 @@ function generateReason(stage: LegacyStage, goal: LegacyGoal, moment: PresentMom
 export function generateWorldEffect(emotion: string): { message: string; unlock: string; localizedMessage: LocalizedText } {
   const effect = WORLD_EFFECTS[emotion] ?? WORLD_EFFECTS.curious;
   return { ...effect, localizedMessage: localizeWorldEffect(effect.message) };
-}
-
-export function generateDiscovery(answerA: string, answerB: string): { title: string; desc: string; type: 'similar' | 'different' } {
-  const a = answerA.toLowerCase();
-  const b = answerB.toLowerCase();
-  const commonWords = ['一起', '喜欢', '想', '爱', '希望', '理解', '感受', '分享', '陪伴'];
-  const hasCommon = commonWords.some((word) => a.includes(word) && b.includes(word));
-  if (hasCommon) return { title: '✨ 共鸣', desc: '原来你们都在期待更多表达。', type: 'similar' };
-  return { title: '🌱 新发现', desc: '原来你们从不同角度看同一个问题。', type: 'different' };
-}
-
-export function generateWorldChange(discoveryType: 'similar' | 'different' | 'event', region: MapArea): { message: string; unlock: string } {
-  if (discoveryType === 'similar') return { message: `${REGIONS[region].icon} ${REGIONS[region].cn} 发光了`, unlock: 'glow' };
-  if (discoveryType === 'event') return { message: `${REGIONS[region].icon} ${REGIONS[region].cn} 发生变化`, unlock: 'event_change' };
-  return { message: '🌸 花园出现新路径', unlock: 'new_path' };
 }
 
 function localizeQuestion(question: string): LocalizedText {
@@ -378,10 +372,4 @@ function toEnglishFallback(question: string): string {
   if (question.includes('边界') || question.includes('需要')) return 'What need or boundary would you like to express more gently?';
   if (question.includes('日常') || question.includes('生活')) return 'Which daily moment would help us understand each other better?';
   return 'What is one honest thing you want the other person to understand today?';
-}
-
-export function getJourneyMax(length: 'short' | 'normal' | 'deep'): number {
-  if (length === 'short') return 2;
-  if (length === 'deep') return 5;
-  return 3;
 }

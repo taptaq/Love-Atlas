@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ExplorationFeedback } from '../../components/ui/ExplorationFeedback';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { discoveryPool } from '../../features/discovery/discoveryPool';
 import { getDiscoveryCopy } from '../../features/discovery/discoveryI18n';
@@ -24,11 +25,12 @@ export function SummaryPage() {
 
   return (
     <main className="page flow-page summary-page">
-      <LoadingOverlay visible={isLoading} message={language === 'cn' ? '加载中…' : 'Loading…'} />
+      <LoadingOverlay visible={isLoading} message={language === 'cn' ? '正在生成旅程总结…' : 'Generating journey summary…'} />
       <section className="flow-header">
         <span className="step-pill">05 / {language === 'cn' ? '旅程总结' : 'Summary'}</span>
         <h1>{language === 'cn' ? '这次旅程留下了新的痕迹' : 'This journey left new traces'}</h1>
         <p>{summary.resonance || (language === 'cn' ? '你们完成了一次完整探索。' : 'You completed a full exploration.')}</p>
+        {summary.generatedBy === 'ai' && <small>{language === 'cn' ? 'AI 已根据本次问答生成关系洞察' : 'AI generated relationship insight from this journey'}</small>}
       </section>
 
       <section className="summary-grid">
@@ -48,6 +50,8 @@ export function SummaryPage() {
           <span className="eyebrow">{language === 'cn' ? 'AB 互动' : 'AB Interaction'}</span>
           <h2>{history.length} {language === 'cn' ? '个问题已完成' : 'questions completed'}</h2>
           <p>{summary.nextTopic}</p>
+          {summary.differences && <p>{summary.differences}</p>}
+          {summary.actionSuggestion && <p>{summary.actionSuggestion}</p>}
         </article>
       </section>
 
@@ -58,6 +62,12 @@ export function SummaryPage() {
           {summary.moment.imagePreview && <img alt={language === 'cn' ? '此刻图片' : 'Present moment'} src={summary.moment.imagePreview} />}
           {summary.moment.text && <p>{summary.moment.text}</p>}
           {summary.moment.imageTags.length > 0 && <p>{summary.moment.imageTags.map((tag) => `#${tag}`).join(' ')}</p>}
+          {summary.moment.imageCaption && (
+            <p>{language === 'cn' ? '云端视觉理解：' : 'Cloud vision: '}{summary.moment.imageCaption}</p>
+          )}
+          {summary.moment.imageOcrText && (
+            <p>{language === 'cn' ? '本地 OCR 识别：' : 'Local OCR: '}{summary.moment.imageOcrText}</p>
+          )}
           {summary.moment.routeInfluence && <p>{summary.moment.routeInfluence.reason}</p>}
         </section>
       )}
@@ -107,6 +117,8 @@ export function SummaryPage() {
           </div>
         </section>
       )}
+
+      <ExplorationFeedback />
 
       <div className="flow-actions">
         <button type="button" onClick={() => goToStep('home')}>{language === 'cn' ? '返回首页' : 'Back Home'}</button>

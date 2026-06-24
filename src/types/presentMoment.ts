@@ -28,6 +28,11 @@ export interface PresentMomentState {
   image: string | null;
   imagePreview: string;
   imageTags: string[];
+  imageCaption: string;
+  imageUnderstandingSource: 'cloud-vlm' | 'local-ocr' | 'heuristic' | null;
+  imageOcrText: string;
+  imageOcrConfidence: number | null;
+  imageOcrStatus: 'idle' | 'recognizing' | 'done' | 'error';
   captureMode: MomentCaptureMode;
   routeInfluence: RouteInfluence | null;
 }

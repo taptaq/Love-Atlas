@@ -31,15 +31,20 @@ function readBearerToken(request: IncomingMessage) {
 async function readAuthUser(request: IncomingMessage): Promise<AuthUser | null> {
   const token = readBearerToken(request);
   if (!token || !isSupabaseAuthConfigured) return null;
-  const authResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: {
-      apikey: supabaseAnonKey as string,
-      authorization: `Bearer ${token}`,
-    },
-  });
-  if (!authResponse.ok) throw new Error('Invalid auth token');
-  const user = await authResponse.json() as AuthUser;
-  return user?.id ? user : null;
+  try {
+    const authResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        apikey: supabaseAnonKey as string,
+        authorization: `Bearer ${token}`,
+      },
+    });
+    if (!authResponse.ok) return null;
+    const user = await authResponse.json() as AuthUser;
+    return user?.id ? user : null;
+  } catch (error) {
+    console.error('Supabase auth validation failed:', error instanceof Error ? error.message : error);
+    return null;
+  }
 }
 
 function resolveUserId(authUser: AuthUser | null, bodyUserId: string | undefined) {
@@ -491,13 +496,26 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
       return true;
     }
 
+    if (request.method === 'GET' && request.url === '/api/spaces/explorations/state') {
+      sendJson(response, 400, { error: 'Exploration ID is required' });
+      return true;
+    }
+
     if (request.method === 'GET' && request.url.startsWith('/api/spaces/explorations/state/')) {
       const explorationId = decodeURIComponent(request.url.replace('/api/spaces/explorations/state/', ''));
       const exploration = await prisma.explorationSession.findUnique({ where: { id: explorationId } });
-      if (!exploration) throw new Error('Exploration not found');
+      if (!exploration) {
+        sendJson(response, 404, { error: 'Exploration not found' });
+        return true;
+      }
       await assertCanReadSpace(exploration.spaceId, authUser);
       const state = await prisma.explorationState.findUnique({ where: { explorationId } });
       sendJson(response, 200, { sharedState: state?.sharedState ?? null });
+      return true;
+    }
+
+    if (request.method === 'GET' && request.url === '/api/spaces/explorations/detail') {
+      sendJson(response, 400, { error: 'Exploration ID is required' });
       return true;
     }
 
@@ -509,7 +527,10 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
         prisma.mirrorEvent.findMany({ where: { explorationId }, orderBy: { createdAt: 'asc' } }),
         prisma.sessionSummary.findMany({ where: { explorationId }, orderBy: { createdAt: 'desc' } }),
       ]);
-      if (!exploration) throw new Error('Exploration not found');
+      if (!exploration) {
+        sendJson(response, 404, { error: 'Exploration not found' });
+        return true;
+      }
       await assertCanReadSpace(exploration.spaceId, authUser);
       sendJson(response, 200, {
         exploration: exploration ? normalizeExploration(exploration) : null,
@@ -682,7 +703,17 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
     sendJson(response, 404, { error: 'Unknown space API route' });
     return true;
   } catch (error) {
-    sendJson(response, 500, { error: error instanceof Error ? error.message : 'Space API error' });
+    const message = error instanceof Error ? error.message : 'Space API error';
+    console.error('[spaceApi] request failed:', request.method, request.url, message);
+    if (message.includes('Authentication required')) {
+      sendJson(response, 401, { error: message });
+    } else if (message.includes('Space not found') || message.includes('Exploration not found')) {
+      sendJson(response, 404, { error: message });
+    } else if (message.includes('Only active space members') || message.includes('You are not a member')) {
+      sendJson(response, 403, { error: message });
+    } else {
+      sendJson(response, 500, { error: message });
+    }
     return true;
   }
 }
