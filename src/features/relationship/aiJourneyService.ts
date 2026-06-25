@@ -67,7 +67,6 @@ export interface AiCompanionAnswer {
 
 export function generateAiCompanionAnswer(params: {
   question: string;
-  answerA: string;
   stage: RelationshipStage | null;
   goal: JourneyGoal | null;
   questionIndex: number;
@@ -99,6 +98,8 @@ export function generateAiQuestion(params: {
   stage: RelationshipStage | null;
   goal: JourneyGoal | null;
   areas: MapArea[];
+  targetArea?: MapArea;
+  preferredType?: 'guess' | 'mirror' | 'choice' | 'sync';
   currentQuestionIndex: number;
   moment: PresentMomentState;
   history: string[];
@@ -134,4 +135,60 @@ export function generateAiCoach(params: {
     coach: { cn: string; en: string };
     buffer: { cn: string; en: string };
   }>('/api/ai/coach', params);
+}
+
+// 深度对话追问
+export interface AiFollowupResult {
+  question: string;
+  hint: string;
+  reason: string;
+  focusArea: 'resonance' | 'difference' | 'emotion' | 'action';
+  localized: { cn: string; en: string };
+  localizedHint: { cn: string; en: string };
+  localizedReason: { cn: string; en: string };
+}
+
+export function generateAiFollowup(params: {
+  depth: number;
+  originalQuestion: string;
+  answerA: string;
+  answerB: string;
+  prevInsights: ABInsights | null;
+  stage: RelationshipStage | null;
+  goal: JourneyGoal | null;
+}) {
+  return postJson<AiFollowupResult>('/api/ai/followup', params);
+}
+
+// 深度对话总结
+export interface AiDialogueSummaryResult {
+  trajectory: string;
+  keyInsight: string;
+  bridge: string;
+  integration: string;
+  completedDepth: number;
+  isCompleted: boolean;
+}
+
+export function generateAiDialogueSummary(params: {
+  layers: unknown[];
+  completedDepth: number;
+  stage: RelationshipStage | null;
+  goal: JourneyGoal | null;
+}) {
+  return postJson<AiDialogueSummaryResult>('/api/ai/dialogue-summary', params);
+}
+
+// AI 语义相似度计算
+export interface AiSimilarityResult {
+  similarity: number;
+  source: 'ai' | 'fallback';
+}
+
+export function generateAiSimilarity(params: {
+  answerA: string;
+  answerB: string;
+  localSimilarity: number;
+}) {
+  return postJson<AiSimilarityResult>('/api/ai/similarity', params);
 }

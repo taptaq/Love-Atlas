@@ -59,6 +59,7 @@ export function RoutePage() {
   const sessionId = useSessionStore((state) => state.session?.id);
   const applyPresentMoment = useJourneyStore((state) => state.applyPresentMoment);
   const startJourney = useJourneyStore((state) => state.startJourney);
+  const isStartingJourney = useJourneyStore((state) => state.isStartingJourney);
   const previousStep = useJourneyStore((state) => state.previousStep);
   const [momentText, setMomentText] = useState(presentMoment.text);
   const [activeMomentAction, setActiveMomentAction] = useState<MomentAction>('none');
@@ -396,7 +397,11 @@ export function RoutePage() {
 
       <div className="flow-actions">
         <button type="button" onClick={previousStep}>{language === 'cn' ? '返回' : 'Back'}</button>
-        <button className="primary-btn" type="button" onClick={startJourney}>{language === 'cn' ? '开始旅程' : 'Begin Journey'}</button>
+        <button className="primary-btn" disabled={isStartingJourney} type="button" onClick={startJourney}>
+          {isStartingJourney
+            ? (language === 'cn' ? 'AI 出题中…' : 'AI generating…')
+            : (language === 'cn' ? '开始旅程' : 'Begin Journey')}
+        </button>
       </div>
     </main>
   );

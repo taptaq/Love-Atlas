@@ -353,7 +353,8 @@ export function HomePage({ memberCount }: { memberCount: number }) {
 
       <WeeklyBlindBox onStart={handleStartBlindBoxTheme} />
 
-      <ReminderBanner />
+      {/* 提醒功能暂时关闭，后续修复后再启用 */}
+      {/* <ReminderBanner /> */}
 
       <section className={hasSpace ? 'space-entry-layout' : 'space-entry-layout space-entry-layout-single'}>
         <article className="space-primary-card">

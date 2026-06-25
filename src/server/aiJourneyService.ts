@@ -121,25 +121,44 @@ async function generateQuestion(body: ApiBody) {
     ? body.areas.filter((area): area is MapArea => typeof area === 'string' && (VALID_AREAS as readonly string[]).includes(area))
     : [];
   const fallbackArea = areas[0] ?? 'forest';
-  const history = Array.isArray(body.history) ? body.history.filter((item): item is string => typeof item === 'string').slice(-6) : [];
+  // 优先使用客户端根据 questionIndex 轮转指定的目标区域
+  const targetArea = asArea(body.targetArea, fallbackArea);
+  // 优先使用客户端指定的题型（guess=开放性 / choice=选择型），交替均衡
+  const preferredType = typeof body.preferredType === 'string' && (VALID_TYPES as readonly string[]).includes(body.preferredType)
+    ? body.preferredType as QuestionType
+    : 'guess';
+  const history = Array.isArray(body.history) ? body.history.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).slice(-6) : [];
   const moment = body.moment && typeof body.moment === 'object' ? body.moment : {};
   const questionIndex = Number(body.currentQuestionIndex ?? 0);
   const momentContext = buildMomentQuestionContext(moment as Record<string, unknown>, questionIndex);
+  const previousQuestions = history.slice(-3);
+
+  const typeHint = preferredType === 'choice'
+    ? 'Question type is "choice": design 2-3 concrete options within the question text, then ask which one resonates more, so both people can compare their choices.'
+    : preferredType === 'guess'
+      ? 'Question type is "guess": ask an open-ended question that invites a personal, reflective answer (not multiple choice).'
+      : `Question type is "${preferredType}": design accordingly.`;
+
   const prompt = [
     'Generate one fresh relationship exploration question for two people.',
     'The question should feel specific, warm, and useful for a real conversation.',
     'If present-moment context is applied, let it shape the question, hint, reason, region, and emotion.',
-    'Avoid repeating history questions.',
+    'CRITICAL: The generated question must be DISTINCT from previous questions. Do NOT reuse the same scenario, metaphor, or core prompt with only minor wording changes.',
+    'If previous questions mentioned specific scenes (garden paths, roads, rooms, etc.), choose a completely different angle, topic, or emotional layer.',
+    'Vary the question type across the journey: earlier questions can be broader and reflective; later questions should go deeper into values, feelings, or shared future.',
+    `THIS question MUST use region="${targetArea}". Do not use any other region.`,
+    typeHint,
     'Return JSON only with this format:',
-    '{"question":{"cn":"中文问题","en":"English question"},"hint":{"cn":"中文提示","en":"English hint"},"reason":{"cn":"中文生成理由","en":"English reason"},"emotion":"curious","region":"forest","type":"guess"}',
+    '{"question":{"cn":"中文问题","en":"English question"},"hint":{"cn":"中文提示","en":"English hint"},"reason":{"cn":"中文生成理由","en":"English reason"},"emotion":"curious","region":"' + targetArea + '","type":"' + preferredType + '"}',
     'region must be one of forest/coast/valley/city/garden.',
     'type must be one of guess/mirror/choice/sync.',
     `Relationship stage: ${asString(body.stage, 'unknown')}`,
     `Goal: ${asString(body.goal, 'unknown')}`,
-    `Route areas: ${areas.join(', ') || fallbackArea}`,
+    `Full route areas: ${areas.join(', ') || fallbackArea}`,
+    `Target area for THIS question: ${targetArea}`,
     `Question index: ${questionIndex}`,
     momentContext,
-    `History: ${history.join(' | ') || 'none'}`,
+    `Previous questions (must be different from these): ${previousQuestions.join(' | ') || 'none'}`,
     `World region progress: ${JSON.stringify(body.worldProgress ?? {})}`,
   ].join('\n');
   const parsed = await callDeepSeekJson(prompt, 500);
@@ -150,8 +169,9 @@ async function generateQuestion(body: ApiBody) {
     question: asString(question.cn, '今天你最希望对方理解你的哪一部分？'),
     hint: asString(hint.cn, '从一个具体瞬间说起，会更容易靠近。'),
     emotion: asString(parsed.emotion, 'curious'),
-    region: asArea(parsed.region, fallbackArea),
-    type: asQuestionType(parsed.type),
+    // 强制使用目标区域，不信任 AI 返回的区域
+    region: targetArea,
+    type: preferredType,
     localized: {
       cn: asString(question.cn, '今天你最希望对方理解你的哪一部分？'),
       en: asString(question.en, 'What part of you do you most hope the other person understands today?'),
@@ -331,6 +351,40 @@ async function generateTheme(body: ApiBody) {
   };
 }
 
+async function generateSimilarity(body: ApiBody) {
+  const answerA = asString(body.answerA);
+  const answerB = asString(body.answerB);
+  const localSimilarity = Number(body.localSimilarity ?? 0);
+  if (!answerA || !answerB) return { similarity: localSimilarity, source: 'fallback' as const };
+
+  const prompt = [
+    'You are a semantic analysis assistant for a relationship exploration app.',
+    'Two people answered the same relationship question. Evaluate their SEMANTIC similarity (not word overlap).',
+    'Focus on: shared emotional themes, underlying values, relationship intentions, and conceptual resonance.',
+    'Two answers using completely different words to express the same feeling should score HIGH.',
+    'Two answers using similar words but expressing opposite feelings should score LOW.',
+    'Return JSON only with this format:',
+    '{"similarity":0到100的整数,"reason":"中文，15-30字，简述为何这个分数"}',
+    'Scoring guide:',
+    '90-100: Nearly identical meaning and emotion',
+    '70-89: Same core value, different expression',
+    '50-69: Partial overlap in theme or feeling',
+    '30-49: Some shared elements but mostly different',
+    '10-29: Barely related',
+    '0-9: Completely different meanings',
+    `Answer A: ${answerA.slice(0, 600)}`,
+    `Answer B: ${answerB.slice(0, 600)}`,
+    `Local algorithm similarity (for reference, may miss abstract connections): ${localSimilarity}%`,
+  ].join('\n');
+
+  const parsed = await callDeepSeekJson(prompt, 200);
+  const aiSimilarity = Number(parsed.similarity);
+  if (!Number.isFinite(aiSimilarity) || aiSimilarity < 0 || aiSimilarity > 100) {
+    return { similarity: localSimilarity, source: 'fallback' as const };
+  }
+  return { similarity: Math.round(aiSimilarity), source: 'ai' as const };
+}
+
 async function generateReminder(body: ApiBody) {
   const days = Number(body.days ?? 0);
   const stage = asString(body.stage, 'unknown');
@@ -401,7 +455,6 @@ async function generateMomentInfluence(body: ApiBody) {
 
 async function generateCompanionAnswer(body: ApiBody) {
   const question = asString(body.question);
-  const userAnswer = asString(body.answerA);
   const stage = asString(body.stage, 'dating');
   const goal = asString(body.goal, 'know');
   const questionIndex = Number(body.questionIndex ?? 0);
@@ -409,15 +462,18 @@ async function generateCompanionAnswer(body: ApiBody) {
   const prompt = [
     'You are a virtual companion in Love Atlas, helping a reviewer experience the full flow without a real partner.',
     'Generate a warm, realistic answer as if you were the partner in this relationship.',
+    'CRITICAL: You must answer INDEPENDENTLY from your own perspective, as a real person would.',
+    'Do NOT echo, agree with, or respond to the other person\'s answer — you don\'t know what they wrote.',
+    'Have your OWN thoughts, memories, preferences, and uncertainties. It\'s okay to differ, to hesitate, or to have a completely different take.',
+    'Sometimes be decisive, sometimes be unsure, sometimes share a personal memory — vary your emotional register across questions.',
     'Your answer should feel genuine — not too perfect, not too short. Like a real person who cares.',
     'Return JSON only with this format:',
-    '{"answer":"中文回答（30-120字，像真实伴侣的口吻）","ready":true}',
+    '{"answer":"中文回答（30-120字，像真实伴侣的口吻，有自己的想法）","ready":true}',
     'Keep the tone warm but natural. Vary length based on the question — some answers can be short, some longer.',
     `Relationship stage: ${stage}`,
     `Goal: ${goal}`,
     `Question index: ${questionIndex}`,
     `Question: ${question}`,
-    `Partner (user) answered: ${userAnswer.slice(0, 400) || '(still thinking)'}`,
   ].join('\n');
 
   const parsed = await callDeepSeekJson(prompt, 400);
@@ -427,9 +483,104 @@ async function generateCompanionAnswer(body: ApiBody) {
   };
 }
 
+// 深度对话追问生成
+async function generateFollowup(body: ApiBody) {
+  const depth = Math.max(1, Math.min(3, Number(body.depth ?? 1)));
+  const originalQuestion = asString(body.originalQuestion);
+  const answerA = asString(body.answerA);
+  const answerB = asString(body.answerB);
+  const prevInsights = body.prevInsights && typeof body.prevInsights === 'object' ? body.prevInsights as Record<string, unknown> : {};
+  const stage = asString(body.stage, 'dating');
+  const goal = asString(body.goal, 'know');
+
+  const depthGuidance = depth === 1
+    ? 'Layer 1: light follow-up. Surface the WHY behind the difference. Do not go too deep yet.'
+    : depth === 2
+      ? 'Layer 2: deeper. Ask about the personal experience or memory that shaped this view.'
+      : 'Layer 3: final integration. Help them INTEGRATE what they discovered — find a bridge or synthesis, not a new gap.';
+
+  const prompt = [
+    'You are Love Atlas. Generate ONE follow-up question that goes deeper into a specific difference between two answers.',
+    'CRITICAL: This question is addressed to BOTH people equally. Use "你们" / "you both" / "你们各自" to refer to the couple together.',
+    'NEVER address only one person. NEVER use "你" alone to point at one specific person.',
+    'NEVER say "A" or "B" in the question text. NEVER ask one person to compare themselves with the other.',
+    'The question should be answerable by BOTH people from their own perspective.',
+    'The follow-up should drill into the SPECIFIC tension or nuance — NOT repeat the original question.',
+    'Return JSON only with this format:',
+    '{"question":{"cn":"追问（15-30字）","en":"English follow-up (10-20 words)"},"hint":{"cn":"提示（15-30字）","en":"Hint (10-20 words)"},"reason":{"cn":"为什么追问这个（20-40字）","en":"Why this question (15-30 words)"},"focusArea":"resonance|difference|emotion|action"}',
+    `Depth: ${depth}/3`,
+    depthGuidance,
+    `Original question: ${originalQuestion}`,
+    `Answer A: ${answerA.slice(0, 400)}`,
+    `Answer B: ${answerB.slice(0, 400)}`,
+    `Previous insights: ${JSON.stringify(prevInsights).slice(0, 600)}`,
+    `Relationship stage: ${stage}`,
+    `Goal: ${goal}`,
+  ].join('\n');
+
+  const parsed = await callDeepSeekJson(prompt, 400);
+  const question = parsed.question && typeof parsed.question === 'object' ? parsed.question as Record<string, unknown> : {};
+  const hint = parsed.hint && typeof parsed.hint === 'object' ? parsed.hint as Record<string, unknown> : {};
+  const reason = parsed.reason && typeof parsed.reason === 'object' ? parsed.reason as Record<string, unknown> : {};
+  const VALID_FOCUS = ['resonance', 'difference', 'emotion', 'action'];
+  const focusArea = typeof parsed.focusArea === 'string' && VALID_FOCUS.includes(parsed.focusArea) ? parsed.focusArea : 'difference';
+
+  return {
+    question: asString(question.cn, '能多说一点你这样想的原因吗？'),
+    hint: asString(hint.cn, '从一个具体的瞬间或经历说起会更容易。'),
+    reason: asString(reason.cn, '追问是为了看见答案背后的故事。'),
+    focusArea,
+    localized: {
+      cn: asString(question.cn, '能多说一点你这样想的原因吗？'),
+      en: asString(question.en, 'Can you share more about why you think this way?'),
+    },
+    localizedHint: {
+      cn: asString(hint.cn, '从一个具体的瞬间或经历说起会更容易。'),
+      en: asString(hint.en, 'Starting from a specific moment or memory makes it easier.'),
+    },
+    localizedReason: {
+      cn: asString(reason.cn, '追问是为了看见答案背后的故事。'),
+      en: asString(reason.en, 'Following up to see the story behind the answer.'),
+    },
+  };
+}
+
+// 深度对话总结生成
+async function generateDialogueSummary(body: ApiBody) {
+  const layers = Array.isArray(body.layers) ? body.layers : [];
+  const completedDepth = Math.max(0, Math.min(3, Number(body.completedDepth ?? 0)));
+  const isCompleted = completedDepth >= 3;
+  const stage = asString(body.stage, 'dating');
+  const goal = asString(body.goal, 'know');
+
+  const prompt = [
+    'You are Love Atlas. Summarize a multi-layer deep dialogue between two people.',
+    'They started with one question and went deeper through follow-up questions.',
+    'Generate a concise summary that captures the TRAJECTORY of their understanding — how their views shifted across layers.',
+    'Return JSON only with this format:',
+    '{"trajectory":"认知轨迹（中文，30-60字，描述从表层差异到深层理解的演变）","keyInsight":"核心洞察（中文，20-40字，最关键的一个发现）","bridge":"连接建议（中文，20-40字，一个可行动的桥接方式）","integration":"整合方向（中文，20-40字，未来如何把这次发现带入日常）"}',
+    isCompleted
+      ? 'They completed all 3 layers. The summary should feel like a complete arc — from difference to integration.'
+      : `They exited after ${completedDepth} layer(s). Acknowledge what they discovered so far, without forcing closure. Suggest a gentle way to continue later.`,
+    `Relationship stage: ${stage}`,
+    `Goal: ${goal}`,
+    `Layers: ${JSON.stringify(layers).slice(0, 2500)}`,
+  ].join('\n');
+
+  const parsed = await callDeepSeekJson(prompt, 500);
+  return {
+    trajectory: asString(parsed.trajectory, '你们从表面的分歧开始，逐渐看见彼此答案背后的故事。'),
+    keyInsight: asString(parsed.keyInsight, '差异不是对立，而是两种不同的爱的表达。'),
+    bridge: asString(parsed.bridge, '找一个轻松的时刻，把对方打动你的部分复述给对方听。'),
+    integration: asString(parsed.integration, '把这次发现作为你们关系中的一个小小默契。'),
+    completedDepth,
+    isCompleted,
+  };
+}
+
 export async function handleAiJourneyApi(request: IncomingMessage, response: ServerResponse) {
   const path = request.url ? new URL(request.url, 'http://localhost').pathname : '';
-  if (!path.startsWith('/api/ai/question') && !path.startsWith('/api/ai/summary') && !path.startsWith('/api/ai/coach') && !path.startsWith('/api/ai/theme') && !path.startsWith('/api/ai/insights') && !path.startsWith('/api/ai/reminder') && path !== '/api/ai/moment' && !path.startsWith('/api/ai/companion')) return false;
+  if (!path.startsWith('/api/ai/question') && !path.startsWith('/api/ai/summary') && !path.startsWith('/api/ai/coach') && !path.startsWith('/api/ai/theme') && !path.startsWith('/api/ai/insights') && !path.startsWith('/api/ai/reminder') && !path.startsWith('/api/ai/similarity') && path !== '/api/ai/moment' && !path.startsWith('/api/ai/companion') && !path.startsWith('/api/ai/followup') && !path.startsWith('/api/ai/dialogue-summary')) return false;
   try {
     if (request.method !== 'POST') {
       sendJson(response, 405, { error: 'Method not allowed' });
@@ -446,11 +597,17 @@ export async function handleAiJourneyApi(request: IncomingMessage, response: Ser
             ? await generateInsights(body)
             : path.startsWith('/api/ai/reminder')
               ? await generateReminder(body)
-              : path === '/api/ai/moment'
-                ? await generateMomentInfluence(body)
-                : path.startsWith('/api/ai/companion')
-                  ? await generateCompanionAnswer(body)
-                  : await generateSummary(body);
+              : path.startsWith('/api/ai/similarity')
+                ? await generateSimilarity(body)
+                : path === '/api/ai/moment'
+                  ? await generateMomentInfluence(body)
+                  : path.startsWith('/api/ai/companion')
+                    ? await generateCompanionAnswer(body)
+                    : path.startsWith('/api/ai/followup')
+                      ? await generateFollowup(body)
+                      : path.startsWith('/api/ai/dialogue-summary')
+                        ? await generateDialogueSummary(body)
+                        : await generateSummary(body);
     sendJson(response, 200, result);
     return true;
   } catch (error) {

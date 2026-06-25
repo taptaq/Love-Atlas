@@ -10,10 +10,13 @@ export function SummaryPage() {
   const language = useUiStore((state) => state.language);
   const summary = useJourneyStore((state) => state.summary);
   const history = useJourneyStore((state) => state.journeyHistory);
+  const dialogueSummary = useJourneyStore((state) => state.dialogueSummary);
+  const dialogueChain = useJourneyStore((state) => state.dialogueChain);
   const goToStep = useJourneyStore((state) => state.goToStep);
   const resetJourney = useJourneyStore((state) => state.resetJourney);
   const refreshDiscoveries = useDiscoveryStore((state) => state.refresh);
   const [isLoading, setIsLoading] = useState(false);
+  const cn = language === 'cn';
   const discoveries = Array.from(new Set(summary.discoveries))
     .map((id) => discoveryPool.find((item) => item.id === id))
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
@@ -54,6 +57,47 @@ export function SummaryPage() {
           {summary.actionSuggestion && <p>{summary.actionSuggestion}</p>}
         </article>
       </section>
+
+      {dialogueSummary && dialogueChain.length > 0 && (
+        <section className="route-preview-card dialogue-summary-summary-card">
+          <span className="eyebrow">{cn ? '🔗 深度对话总结' : '🔗 Deep Dialogue Summary'}</span>
+          <div className="dialogue-chain-bar">
+            {[1, 2, 3].map((d) => (
+              <span key={d} className={`chain-dot ${d <= dialogueSummary.completedDepth ? 'active' : ''}`}>
+                <small>L{d}</small>
+              </span>
+            ))}
+            <span className="chain-label">
+              {dialogueSummary.isCompleted
+                ? (cn ? '完整 3 层' : 'Full 3 layers')
+                : (cn ? `完成 ${dialogueSummary.completedDepth} 层（未走完）` : `${dialogueSummary.completedDepth} layers (incomplete)`)}
+            </span>
+          </div>
+          <p><strong>{cn ? '认知轨迹' : 'Trajectory'}：</strong>{dialogueSummary.trajectory}</p>
+          <p><strong>{cn ? '核心洞察' : 'Key Insight'}：</strong>{dialogueSummary.keyInsight}</p>
+          <p><strong>{cn ? '连接建议' : 'Bridge'}：</strong>{dialogueSummary.bridge}</p>
+          <p><strong>{cn ? '整合方向' : 'Integration'}：</strong>{dialogueSummary.integration}</p>
+          {dialogueChain.length > 0 && (
+            <details className="dialogue-chain-details">
+              <summary>{cn ? `查看 ${dialogueChain.length} 层追问记录` : `View ${dialogueChain.length} follow-up layers`}</summary>
+              {dialogueChain.map((layer) => (
+                <div key={layer.depth} className="dialogue-layer-record">
+                  <h3>{cn ? `第 ${layer.depth} 层` : `Layer ${layer.depth}`}{layer.revealVisible ? '' : (cn ? '（未完成）' : ' (incomplete)')}</h3>
+                  <p className="layer-question">{layer.question.question}</p>
+                  {layer.revealVisible && (
+                    <>
+                      <p><strong>A：</strong>{layer.answerA}</p>
+                      <p><strong>B：</strong>{layer.answerB}</p>
+                      <p className="layer-similarity">{cn ? '相似度' : 'Similarity'}：{layer.similarity}%</p>
+                      {layer.insights && <p className="layer-insight">{layer.insights.resonance}</p>}
+                    </>
+                  )}
+                </div>
+              ))}
+            </details>
+          )}
+        </section>
+      )}
 
       {(summary.moment?.text || summary.moment?.scene || summary.moment?.imagePreview) && (
         <section className="route-preview-card moment-summary-card">

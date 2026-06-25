@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { generateAiInsights, generateAiQuestion, generateAiSummary } from '../features/relationship/aiJourneyService';
+import { generateAiDialogueSummary, generateAiFollowup, generateAiInsights, generateAiQuestion, generateAiSimilarity, generateAiSummary } from '../features/relationship/aiJourneyService';
 import { getGoalOption } from '../features/relationship/relationship.config';
 import { JOURNEY_PROGRESS_DELTA, SIMILARITY_THRESHOLD } from '../features/relationship/journeyConfig';
 import { getRecommendedRouteAreas } from '../features/relationship/routePlanner';
@@ -28,6 +28,37 @@ import type {
 } from '../types';
 
 const stepFlow: StepFlow[] = ['setup', 'goal', 'route', 'journey', 'summary'];
+
+// 深度对话单层数据
+export interface DialogueLayer {
+  depth: number;              // 0=原题, 1-3=追问层
+  question: {
+    question: string;
+    hint: string;
+    reason: string;
+    focusArea: 'resonance' | 'difference' | 'emotion' | 'action';
+    localized?: { cn: string; en: string };
+    localizedHint?: { cn: string; en: string };
+    localizedReason?: { cn: string; en: string };
+  };
+  answerA: string;
+  answerB: string;
+  answerAReady: boolean;
+  answerBReady: boolean;
+  revealVisible: boolean;
+  similarity: number;
+  insights: ABInsights | null;
+}
+
+// 深度对话总结
+export interface DialogueSummary {
+  trajectory: string;
+  keyInsight: string;
+  bridge: string;
+  integration: string;
+  completedDepth: number;
+  isCompleted: boolean;
+}
 
 // 完整步骤顺序（含侧边入口），用于同步时的步骤优先级判断
 // 主流程在前，侧边入口在后，避免对方在主流程时把本地从侧边入口拉回
@@ -92,12 +123,18 @@ const defaultSummary: SummaryData = {
 };
 
 async function generateQuestionWithAiFallback(state: JourneyStoreState, questionIndex: number, historyQuestions: string[]) {
-  const areas = state.route.areas.length > 0 ? state.route.areas : [state.worldState.currentRegion];
+  const routeAreas = state.route.areas.length > 0 ? state.route.areas : [state.worldState.currentRegion];
+  // 按题目索引轮转路线区域：第 0 题用 areas[0]，第 1 题用 areas[1]，循环
+  const targetArea = routeAreas[questionIndex % routeAreas.length];
+  // 题型均衡：偶数题用 guess（开放性），奇数题用 choice（选择型），交替
+  const preferredType = questionIndex % 2 === 0 ? 'guess' : 'choice';
   try {
     const aiQuestion = await generateAiQuestion({
       stage: state.relationshipStage,
       goal: state.goal,
-      areas,
+      areas: routeAreas,
+      targetArea,
+      preferredType,
       currentQuestionIndex: questionIndex,
       moment: state.presentMoment,
       history: historyQuestions,
@@ -111,7 +148,7 @@ async function generateQuestionWithAiFallback(state: JourneyStoreState, question
     return generateQuestion({
       stage: state.relationshipStage,
       goal: state.goal,
-      areas,
+      areas: routeAreas,
       currentQuestionIndex: questionIndex,
       moment: state.presentMoment,
       history: historyQuestions,
@@ -141,6 +178,14 @@ export interface JourneyStoreState {
   currentQuestionIndex: number;
   journeyHistory: Array<{ question: JourneyQuestion; answers: ABAnswers; completedAt: string }>;
   events: RelationshipEvent[];
+  isStartingJourney: boolean;
+  isGeneratingNextQuestion: boolean;
+  // 深度对话状态
+  dialogueDepth: number;                    // 当前深度 0-3（0=未开启，1-3=追问层）
+  dialogueChain: DialogueLayer[];           // 深度对话链（不含原题，仅 Layer 1-3）
+  isGeneratingFollowup: boolean;            // AI 生成追问中
+  isGeneratingDialogueSummary: boolean;     // AI 生成总结中
+  dialogueSummary: DialogueSummary | null; // 深度对话总结
 }
 
 interface JourneyStore extends JourneyStoreState {
@@ -154,7 +199,7 @@ interface JourneyStore extends JourneyStoreState {
   setCurrentQuestion: (question: JourneyQuestion | null) => void;
   startJourney: () => void | Promise<void>;
   startMirrorEvent: () => void;
-  completeCurrentEvent: () => void;
+  completeCurrentEvent: () => void | Promise<void>;
   revealAnswers: () => Promise<void>;
   isRevealing: boolean;
   goToNextQuestion: () => void | Promise<void>;
@@ -166,13 +211,19 @@ interface JourneyStore extends JourneyStoreState {
   setAnswerBReady: (ready: boolean) => void;
   unlockMirrorEvent: (mirrorEvent: MirrorEventState) => void;
   completeMirrorEvent: () => void;
-  skipMirrorEvent: () => void;
+  skipMirrorEvent: () => void | Promise<void>;
   addEvent: (event: RelationshipEvent) => void;
   setSelectedExplorationId: (explorationId: string) => void;
   completeQuestion: () => void;
   hydrateSharedState: (state: Partial<JourneyStoreState>) => void;
   completeJourney: (summary: SummaryData) => void;
   resetJourney: () => void;
+  // 深度对话方法
+  startDeepDialogue: () => Promise<void>;
+  submitLayerAnswer: (role: 'A' | 'B', value: string) => void;
+  setLayerReady: (role: 'A' | 'B', ready: boolean) => void;
+  revealLayer: () => Promise<void>;
+  exitDeepDialogue: () => Promise<void>;
 }
 
 export const useJourneyStore = create<JourneyStore>((set, get) => ({
@@ -196,6 +247,14 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
   currentQuestionIndex: 0,
   journeyHistory: [],
   events: [],
+  isStartingJourney: false,
+  isGeneratingNextQuestion: false,
+  // 深度对话初始状态
+  dialogueDepth: 0,
+  dialogueChain: [],
+  isGeneratingFollowup: false,
+  isGeneratingDialogueSummary: false,
+  dialogueSummary: null,
   nextStep: () => {
     const current = get().currentStep;
     const index = stepFlow.indexOf(current);
@@ -253,9 +312,14 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
   setRoute: (route) => set({ route, routeReason: typeof route.reason === 'string' ? route.reason : route.reason.cn }),
   setCurrentQuestion: (currentQuestion) => set({ currentQuestion }),
   startJourney: async () => {
-    const state = get();
-    const question = await generateQuestionWithAiFallback(state, 0, state.journeyHistory.map((item) => item.question.question));
-    set({ currentQuestion: question, currentQuestionIndex: 0, currentStep: 'journey', abAnswers: defaultABAnswers });
+    set({ isStartingJourney: true });
+    try {
+      const state = get();
+      const question = await generateQuestionWithAiFallback(state, 0, state.journeyHistory.map((item) => item.question.question));
+      set({ currentQuestion: question, currentQuestionIndex: 0, currentStep: 'journey', abAnswers: defaultABAnswers });
+    } finally {
+      set({ isStartingJourney: false });
+    }
   },
   startMirrorEvent: () => {
     const state = get();
@@ -267,13 +331,28 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
       mirrorEvent: { ...state.mirrorEvent, active: true, decision: state.mirrorEvent.signal },
     });
   },
-  completeCurrentEvent: () => {
+  completeCurrentEvent: async () => {
     const state = get();
+    // 先清空事件，标记镜像事件完成
     set({
       currentEvent: null,
-      currentStep: 'journey',
       mirrorEvent: { ...state.mirrorEvent, active: false, completed: true, unlocked: false },
+      isGeneratingNextQuestion: true,
     });
+    try {
+      // 镜像事件完成后，生成下一题并跳转回旅程
+      const question = await generateQuestionWithAiFallback(state, state.currentQuestionIndex, state.journeyHistory.map((item) => item.question.question));
+      set({
+        currentQuestion: question,
+        currentStep: 'journey',
+        abAnswers: defaultABAnswers,
+        dialogueDepth: 0,
+        dialogueChain: [],
+        dialogueSummary: null,
+      });
+    } finally {
+      set({ isGeneratingNextQuestion: false });
+    }
   },
   revealAnswers: async () => {
     const state = get();
@@ -282,11 +361,22 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
     const answerB = state.abAnswers.answerB;
     const region = state.currentQuestion.region;
     const question = state.currentQuestion.localized?.cn ?? state.currentQuestion.question;
-    const similarity = calculateSimilarity(answerA, answerB);
+    const localSimilarity = calculateSimilarity(answerA, answerB);
     const hasMoment = Boolean(state.presentMoment.scene || state.presentMoment.text || state.presentMoment.image);
 
     // 标记正在揭晓，UI 显示 loading
     set({ isRevealing: true });
+
+    // AI 语义相似度计算：优先调用 AI 获取更准确的语义相似度，失败回退到本地算法
+    let similarity = localSimilarity;
+    try {
+      const aiSimResult = await generateAiSimilarity({ answerA, answerB, localSimilarity });
+      if (aiSimResult.source === 'ai') {
+        similarity = aiSimResult.similarity;
+      }
+    } catch {
+      // AI 失败时使用本地算法结果
+    }
 
     // 优先用 AI 生成个性化洞察，失败回退到规则引擎
     let insights: ABInsights;
@@ -377,28 +467,34 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
   goToNextQuestion: async () => {
     const state = get();
     if (!state.currentQuestion) return;
-    const history = [...state.journeyHistory, { question: state.currentQuestion, answers: state.abAnswers, completedAt: new Date().toISOString() }];
-    const nextIndex = state.currentQuestionIndex + 1;
-    const shouldStartMirrorEvent = Boolean(state.mirrorEvent.signal?.trigger && !state.mirrorEvent.completed && !state.mirrorEvent.skipped);
+    set({ isGeneratingNextQuestion: true });
+    try {
+      const history = [...state.journeyHistory, { question: state.currentQuestion, answers: state.abAnswers, completedAt: new Date().toISOString() }];
+      const nextIndex = state.currentQuestionIndex + 1;
+      // 镜像事件暂时关闭 —— 逻辑有问题，后续修复后再启用
+      // const shouldStartMirrorEvent = Boolean(state.mirrorEvent.signal?.trigger && !state.mirrorEvent.completed && !state.mirrorEvent.skipped);
 
-    if (shouldStartMirrorEvent) {
-      const nextQuestion = await generateQuestionWithAiFallback(state, nextIndex, history.map((item) => item.question.question));
-      const event = createMirrorEvent(state.mirrorEvent.memorySeed);
-      set({
-        journeyHistory: history,
-        currentQuestionIndex: nextIndex,
-        currentQuestion: nextQuestion,
-        currentEvent: event,
-        events: [...state.events, event],
-        currentStep: 'event',
-        abAnswers: defaultABAnswers,
-        mirrorEvent: { ...state.mirrorEvent, active: true, unlocked: true, decision: state.mirrorEvent.signal },
-      });
-      return;
+      // if (shouldStartMirrorEvent) {
+      //   // 镜像事件：不提前生成下一题，等镜像事件完成后再生成
+      //   const event = createMirrorEvent(state.mirrorEvent.memorySeed);
+      //   set({
+      //     journeyHistory: history,
+      //     currentQuestionIndex: nextIndex,
+      //     currentQuestion: null,
+      //     currentEvent: event,
+      //     events: [...state.events, event],
+      //     currentStep: 'event',
+      //     abAnswers: defaultABAnswers,
+      //     mirrorEvent: { ...state.mirrorEvent, active: true, unlocked: true, decision: state.mirrorEvent.signal },
+      //   });
+      //   return;
+      // }
+
+      const question = await generateQuestionWithAiFallback(state, nextIndex, history.map((item) => item.question.question));
+      set({ journeyHistory: history, currentQuestionIndex: nextIndex, currentQuestion: question, abAnswers: defaultABAnswers, dialogueDepth: 0, dialogueChain: [], dialogueSummary: null });
+    } finally {
+      set({ isGeneratingNextQuestion: false });
     }
-
-    const question = await generateQuestionWithAiFallback(state, nextIndex, history.map((item) => item.question.question));
-    set({ journeyHistory: history, currentQuestionIndex: nextIndex, currentQuestion: question, abAnswers: defaultABAnswers });
   },
   endJourney: async () => {
     const state = get();
@@ -442,7 +538,8 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
       resonance: lastItem.answers.insights?.resonance ?? '',
       eventCount: state.events.length,
     });
-    recordExplorationCompleted();
+    // 提醒功能暂时关闭
+    // recordExplorationCompleted();
     let aiSummary: Partial<SummaryData> = {};
     try {
       aiSummary = await generateAiSummary({
@@ -508,7 +605,27 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
   setAnswerBReady: (ready) => set((state) => ({ abAnswers: { ...state.abAnswers, answerBReady: ready } })),
   unlockMirrorEvent: (mirrorEvent) => set({ mirrorEvent }),
   completeMirrorEvent: () => set((state) => ({ mirrorEvent: { ...state.mirrorEvent, active: false, completed: true } })),
-  skipMirrorEvent: () => set((state) => ({ currentEvent: null, currentStep: 'journey', mirrorEvent: { ...state.mirrorEvent, active: false, skipped: true, unlocked: false } })),
+  skipMirrorEvent: async () => {
+    const state = get();
+    set({
+      currentEvent: null,
+      mirrorEvent: { ...state.mirrorEvent, active: false, skipped: true, unlocked: false },
+      isGeneratingNextQuestion: true,
+    });
+    try {
+      const question = await generateQuestionWithAiFallback(state, state.currentQuestionIndex, state.journeyHistory.map((item) => item.question.question));
+      set({
+        currentQuestion: question,
+        currentStep: 'journey',
+        abAnswers: defaultABAnswers,
+        dialogueDepth: 0,
+        dialogueChain: [],
+        dialogueSummary: null,
+      });
+    } finally {
+      set({ isGeneratingNextQuestion: false });
+    }
+  },
   addEvent: (event) => set((state) => ({ events: [...state.events, event] })),
   setSelectedExplorationId: (selectedExplorationId) => set({ selectedExplorationId }),
   completeQuestion: () => {
@@ -554,6 +671,195 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
     return incoming;
   }),
   completeJourney: (summary) => set({ summary, currentStep: 'summary' }),
+  // 深度对话：开启下一层追问
+  startDeepDialogue: async () => {
+    const state = get();
+    if (state.dialogueDepth >= 3) return;
+    if (!state.currentQuestion) return;
+    const nextDepth = state.dialogueDepth + 1;
+    const prevLayer = state.dialogueChain[state.dialogueChain.length - 1];
+    const prevInsights = prevLayer?.insights ?? state.abAnswers.insights;
+    const originalQuestion = state.currentQuestion.localized?.cn ?? state.currentQuestion.question;
+    const answerA = prevLayer?.answerA ?? state.abAnswers.answerA;
+    const answerB = prevLayer?.answerB ?? state.abAnswers.answerB;
+
+    set({ isGeneratingFollowup: true });
+    try {
+      const followup = await generateAiFollowup({
+        depth: nextDepth,
+        originalQuestion,
+        answerA,
+        answerB,
+        prevInsights: prevInsights ?? null,
+        stage: state.relationshipStage,
+        goal: state.goal,
+      });
+      const newLayer: DialogueLayer = {
+        depth: nextDepth,
+        question: {
+          question: followup.question,
+          hint: followup.hint,
+          reason: followup.reason,
+          focusArea: followup.focusArea,
+          localized: followup.localized,
+          localizedHint: followup.localizedHint,
+          localizedReason: followup.localizedReason,
+        },
+        answerA: '',
+        answerB: '',
+        answerAReady: false,
+        answerBReady: false,
+        revealVisible: false,
+        similarity: 0,
+        insights: null,
+      };
+      set({
+        isGeneratingFollowup: false,
+        dialogueDepth: nextDepth,
+        dialogueChain: [...state.dialogueChain, newLayer],
+      });
+    } catch {
+      // fallback 追问
+      const fallbackQuestions = [
+        '能多说一点你这样想的原因吗？',
+        '这个想法背后有没有什么具体的经历？',
+        '如果要把你们的发现带入日常，你觉得可以怎么做？',
+      ];
+      const fallbackHints = [
+        '从一个具体的瞬间或经历说起会更容易。',
+        '不用完整，一个画面或感受都可以。',
+        '哪怕是一个很小的尝试也行。',
+      ];
+      const idx = Math.min(nextDepth - 1, fallbackQuestions.length - 1);
+      const newLayer: DialogueLayer = {
+        depth: nextDepth,
+        question: {
+          question: fallbackQuestions[idx],
+          hint: fallbackHints[idx],
+          reason: '追问是为了看见答案背后的故事。',
+          focusArea: 'difference',
+        },
+        answerA: '',
+        answerB: '',
+        answerAReady: false,
+        answerBReady: false,
+        revealVisible: false,
+        similarity: 0,
+        insights: null,
+      };
+      set({
+        isGeneratingFollowup: false,
+        dialogueDepth: nextDepth,
+        dialogueChain: [...state.dialogueChain, newLayer],
+      });
+    }
+  },
+  // 深度对话：提交某层答案
+  submitLayerAnswer: (role, value) => set((state) => {
+    const chain = [...state.dialogueChain];
+    const current = chain[chain.length - 1];
+    if (!current) return {};
+    chain[chain.length - 1] = role === 'A'
+      ? { ...current, answerA: value }
+      : { ...current, answerB: value };
+    return { dialogueChain: chain };
+  }),
+  // 深度对话：设置某层 ready
+  setLayerReady: (role, ready) => set((state) => {
+    const chain = [...state.dialogueChain];
+    const current = chain[chain.length - 1];
+    if (!current) return {};
+    chain[chain.length - 1] = role === 'A'
+      ? { ...current, answerAReady: ready }
+      : { ...current, answerBReady: ready };
+    return { dialogueChain: chain };
+  }),
+  // 深度对话：揭晓当前层
+  revealLayer: async () => {
+    const state = get();
+    const current = state.dialogueChain[state.dialogueChain.length - 1];
+    if (!current) return;
+    const localSimilarity = calculateSimilarity(current.answerA, current.answerB);
+    const region = state.currentQuestion?.region ?? 'forest';
+
+    // AI 语义相似度：优先 AI，失败回退本地
+    let similarity = localSimilarity;
+    try {
+      const aiSimResult = await generateAiSimilarity({ answerA: current.answerA, answerB: current.answerB, localSimilarity });
+      if (aiSimResult.source === 'ai') {
+        similarity = aiSimResult.similarity;
+      }
+    } catch {
+      // AI 失败时使用本地算法结果
+    }
+
+    let insights: ABInsights;
+    try {
+      const aiResult = await generateAiInsights({
+        answerA: current.answerA,
+        answerB: current.answerB,
+        similarity,
+        question: current.question.question,
+        stage: state.relationshipStage,
+        goal: state.goal,
+        region,
+        hasMoment: false,
+      });
+      insights = aiResult.insights;
+    } catch {
+      insights = generateABInsights(current.answerA, current.answerB, region);
+    }
+    set((s) => {
+      const chain = [...s.dialogueChain];
+      const idx = chain.length - 1;
+      chain[idx] = {
+        ...chain[idx],
+        similarity,
+        insights,
+        revealVisible: true,
+      };
+      return { dialogueChain: chain };
+    });
+  },
+  // 深度对话：退出并生成总结
+  exitDeepDialogue: async () => {
+    const state = get();
+    if (state.dialogueChain.length === 0) {
+      set({ dialogueDepth: 0 });
+      return;
+    }
+    const completedDepth = state.dialogueChain.filter((l) => l.revealVisible).length;
+    set({ isGeneratingDialogueSummary: true });
+    try {
+      const summary = await generateAiDialogueSummary({
+        layers: state.dialogueChain.map((l) => ({
+          depth: l.depth,
+          question: l.question.question,
+          answerA: l.answerA,
+          answerB: l.answerB,
+          similarity: l.similarity,
+          insights: l.insights,
+        })),
+        completedDepth,
+        stage: state.relationshipStage,
+        goal: state.goal,
+      });
+      set({ isGeneratingDialogueSummary: false, dialogueSummary: summary, dialogueDepth: 0 });
+    } catch {
+      set({
+        isGeneratingDialogueSummary: false,
+        dialogueSummary: {
+          trajectory: '你们从表面的分歧开始，逐渐看见彼此答案背后的故事。',
+          keyInsight: '差异不是对立，而是两种不同的爱的表达。',
+          bridge: '找一个轻松的时刻，把对方打动你的部分复述给对方听。',
+          integration: '把这次发现作为你们关系中的一个小小默契。',
+          completedDepth,
+          isCompleted: completedDepth >= 3,
+        },
+        dialogueDepth: 0,
+      });
+    }
+  },
   resetJourney: () => set({
     currentStep: 'setup',
     isHomeManuallyNavigated: false,
@@ -572,5 +878,10 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
     currentQuestionIndex: 0,
     journeyHistory: [],
     events: [],
+    dialogueDepth: 0,
+    dialogueChain: [],
+    isGeneratingFollowup: false,
+    isGeneratingDialogueSummary: false,
+    dialogueSummary: null,
   }),
 }));

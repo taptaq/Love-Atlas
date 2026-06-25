@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { createEventCompletionMessage } from '../../services/eventEngine';
+import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { useJourneyStore, useUiStore } from '../../store';
 
 const mirrorChoices = [
@@ -30,6 +31,7 @@ export function EventPage() {
   const mirrorEvent = useJourneyStore((state) => state.mirrorEvent);
   const completeCurrentEvent = useJourneyStore((state) => state.completeCurrentEvent);
   const skipMirrorEvent = useJourneyStore((state) => state.skipMirrorEvent);
+  const isGeneratingNextQuestion = useJourneyStore((state) => state.isGeneratingNextQuestion);
   const [selectedChoice, setSelectedChoice] = useState<string>('');
   const [reflection, setReflection] = useState('');
   const isMirrorEvent = currentEvent?.type === 'mirror';
@@ -77,6 +79,7 @@ export function EventPage() {
 
   return (
     <main className="page flow-page event-page">
+      <LoadingOverlay visible={isGeneratingNextQuestion} message={language === 'cn' ? 'AI 正在生成下一题…' : 'AI is generating the next question…'} />
       <section className="event-hero-card">
         <span className="step-pill">{language === 'cn' ? '关系事件' : 'Relationship Event'}</span>
         <div className="event-icon">{currentEvent.icon}</div>
@@ -130,8 +133,8 @@ export function EventPage() {
       )}
 
       <div className="flow-actions">
-        <button type="button" onClick={skipMirrorEvent}>{language === 'cn' ? '跳过事件' : 'Skip Event'}</button>
-        <button className="primary-btn" disabled={!canComplete} type="button" onClick={completeCurrentEvent}>{language === 'cn' ? '完成事件并返回旅程' : 'Complete Event and Return'}</button>
+        <button type="button" disabled={isGeneratingNextQuestion} onClick={skipMirrorEvent}>{language === 'cn' ? '跳过事件' : 'Skip Event'}</button>
+        <button className="primary-btn" disabled={!canComplete || isGeneratingNextQuestion} type="button" onClick={completeCurrentEvent}>{language === 'cn' ? '完成事件并返回旅程' : 'Complete Event and Return'}</button>
       </div>
     </main>
   );
