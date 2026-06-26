@@ -209,13 +209,14 @@ export function RoutePage() {
         ocrText: '',
         language,
       });
+      const isCloudVision = cloudResult.source === 'cloud-vlm';
       applyPresentMoment({
         text: momentText,
         image: momentFile.name,
         imagePreview,
         imageTags: cloudResult.tags ?? [],
         imageCaption: cloudResult.caption,
-        imageUnderstandingSource: 'cloud-vlm',
+        imageUnderstandingSource: isCloudVision ? 'cloud-vlm' : 'heuristic',
         imageOcrStatus: 'recognizing',
         captureMode: 'upload',
         routeInfluence: {
@@ -224,7 +225,9 @@ export function RoutePage() {
           weight: 0.84,
         },
       });
-      showAppliedHint(language === 'cn' ? '云端视觉理解已应用到路线' : 'Cloud vision applied to route');
+      showAppliedHint(isCloudVision
+        ? (language === 'cn' ? '云端视觉理解已应用到路线' : 'Cloud vision applied to route')
+        : (language === 'cn' ? '云端视觉暂不可用，已保留基础图片线索' : 'Cloud vision unavailable, basic image cues kept'));
     } catch {
       showAppliedHint(language === 'cn' ? '云端视觉暂不可用，已保留基础图片线索' : 'Cloud vision unavailable, basic image cues kept');
     }

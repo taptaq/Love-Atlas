@@ -5,7 +5,7 @@ export interface CloudMomentImageResult {
   area: MapArea;
   caption: string;
   reason: string;
-  source: 'cloud-vlm';
+  source: 'cloud-vlm' | 'fallback';
 }
 
 export async function analyzeMomentImageWithCloud(params: {

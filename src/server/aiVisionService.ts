@@ -46,6 +46,31 @@ function normalizeArea(value: unknown): MapArea {
     : 'coast';
 }
 
+function inferFallbackTags(fileName: string, text: string, ocrText = '') {
+  const source = `${fileName} ${text} ${ocrText}`.toLowerCase();
+  const tags = new Set<string>();
+  if (/home|room|daily|家|房间|日常/.test(source)) tags.add('daily');
+  if (/travel|trip|road|旅|路上|车|回忆|想念|纪念|miss|memory/.test(source)) tags.add('memory');
+  if (/night|moon|晚|夜|感受|喜欢|爱|开心|难过|feel|love/.test(source)) tags.add('emotion');
+  if (/future|plan|未来|计划|以后|约定|期待|promise/.test(source)) tags.add('future');
+  if (/fight|conflict|argue|吵|争|冷战|生气|抱歉|道歉|sorry/.test(source)) tags.add('conflict');
+  if (/cafe|coffee|咖啡/.test(source)) tags.add('cafe');
+  if (/meal|food|饭|餐|吃/.test(source)) tags.add('meal');
+  if (/photo|image|moment|照片|此刻/.test(source)) tags.add('moment');
+  if (ocrText.trim()) tags.add('ocr-text');
+  if (tags.size === 0) tags.add('moment');
+  return Array.from(tags).filter((tag) => (VALID_TAGS as readonly string[]).includes(tag)).slice(0, 6);
+}
+
+function inferFallbackArea(tags: string[]): MapArea {
+  if (tags.includes('conflict')) return 'garden';
+  if (tags.includes('future')) return 'city';
+  if (tags.includes('memory')) return 'coast';
+  if (tags.includes('emotion')) return 'forest';
+  if (tags.includes('daily') || tags.includes('home') || tags.includes('cafe') || tags.includes('meal')) return 'valley';
+  return 'coast';
+}
+
 function isPlaceholder(value: string | undefined) {
   return !value || value.includes('[YOUR_') || value.includes('your-provider.example.com');
 }
@@ -132,12 +157,13 @@ async function analyzeMomentImage(params: {
 export async function handleAiVisionApi(request: IncomingMessage, response: ServerResponse) {
   if (!request.url?.startsWith('/api/ai/moment-image')) return false;
 
+  let body: ApiBody = {};
   try {
     if (request.method !== 'POST') {
       sendJson(response, 405, { error: 'Method not allowed' });
       return true;
     }
-    const body = await readBody(request);
+    body = await readBody(request);
     const imageDataUrl = typeof body.imageDataUrl === 'string' ? body.imageDataUrl : '';
     if (!imageDataUrl.startsWith('data:image/')) throw new Error('Image data URL is required');
     const result = await analyzeMomentImage({
@@ -150,7 +176,19 @@ export async function handleAiVisionApi(request: IncomingMessage, response: Serv
     sendJson(response, 200, result);
     return true;
   } catch (error) {
-    sendJson(response, 500, { error: error instanceof Error ? error.message : 'Vision image analysis failed' });
+    const message = error instanceof Error ? error.message : 'Vision image analysis failed';
+    console.error('[aiVision] cloud analysis failed:', message);
+    const fileName = typeof body.fileName === 'string' ? body.fileName : '';
+    const momentText = typeof body.momentText === 'string' ? body.momentText : '';
+    const ocrText = typeof body.ocrText === 'string' ? body.ocrText : '';
+    const tags = inferFallbackTags(fileName, momentText, ocrText);
+    sendJson(response, 200, {
+      tags,
+      area: inferFallbackArea(tags),
+      caption: '',
+      reason: momentText ? '云端视觉暂不可用，已先根据文字和文件线索调整路线。' : '云端视觉暂不可用，已保留基础图片线索。',
+      source: 'fallback',
+    });
     return true;
   }
 }

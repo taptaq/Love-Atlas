@@ -50,9 +50,44 @@ const goalLabels: Record<string, string> = {
   future: '聊聊未来',
 };
 
+const stageFallbackAreas: Record<string, MapArea[]> = {
+  new: ['valley', 'forest'],
+  dating: ['forest', 'coast'],
+  'long-term': ['valley', 'garden'],
+  'long-distance': ['city', 'coast'],
+};
+
+const goalFallbackArea: Record<string, MapArea> = {
+  know: 'forest',
+  icebreak: 'valley',
+  common: 'coast',
+  connect: 'forest',
+  fresh: 'garden',
+  deep: 'forest',
+  habit: 'valley',
+  needs: 'garden',
+  review: 'coast',
+  sync: 'valley',
+  miss: 'coast',
+  future: 'city',
+};
+
 interface AiRouteResult {
   areas: MapArea[];
   reason: string;
+}
+
+function generateFallbackRoute(params: { stage: string | null; goal: string | null; language: 'cn' | 'en' }): AiRouteResult {
+  const stageAreas = params.stage ? stageFallbackAreas[params.stage] ?? [] : [];
+  const goalArea = params.goal ? goalFallbackArea[params.goal] : undefined;
+  const areas = Array.from(new Set([...stageAreas, ...(goalArea ? [goalArea] : [])])).slice(0, 3);
+  const fallbackAreas: MapArea[] = areas.length >= 2 ? areas : ['forest', 'valley'];
+  return {
+    areas: fallbackAreas,
+    reason: params.language === 'en'
+      ? 'AI route is temporarily unavailable, so a stable relationship route was generated from your stage and goal.'
+      : 'AI 路线暂不可用，已根据关系阶段和目标生成稳定路线。',
+  };
 }
 
 async function generateRouteWithAI(params: {
@@ -123,18 +158,23 @@ async function generateRouteWithAI(params: {
 export async function handleAiRouteApi(request: IncomingMessage, response: ServerResponse) {
   if (!request.url?.startsWith('/api/ai/route')) return false;
 
+  let body: ApiBody = {};
+  let stage: string | null = null;
+  let goal: string | null = null;
+  let language: 'cn' | 'en' = 'cn';
   try {
-    const body = request.method === 'POST' ? await readBody(request) : {};
-    const stage = typeof body.stage === 'string' && body.stage ? body.stage : null;
-    const goal = typeof body.goal === 'string' && body.goal ? body.goal : null;
-    const language = body.language === 'en' ? 'en' : 'cn';
+    body = request.method === 'POST' ? await readBody(request) : {};
+    stage = typeof body.stage === 'string' && body.stage ? body.stage : null;
+    goal = typeof body.goal === 'string' && body.goal ? body.goal : null;
+    language = body.language === 'en' ? 'en' : 'cn';
 
     const result = await generateRouteWithAI({ stage, goal, language });
     sendJson(response, 200, result);
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'AI route generation failed';
-    sendJson(response, 500, { error: message });
+    console.error('[aiRoute] generation failed:', message);
+    sendJson(response, 200, generateFallbackRoute({ stage, goal, language }));
     return true;
   }
 }

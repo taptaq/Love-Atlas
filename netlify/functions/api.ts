@@ -45,8 +45,7 @@ function getRequestUrl(event: Parameters<Handler>[0]) {
 
 function createFakeRequest(event: Parameters<Handler>[0]): IncomingMessage {
   const raw = event.isBase64Encoded ? Buffer.from(event.body ?? '', 'base64') : Buffer.from(event.body ?? '', 'utf8');
-  const stream = Readable.from([raw]);
-  const req = Object.create(stream) as IncomingMessage;
+  const req = Readable.from(raw.length > 0 ? [raw] : []) as IncomingMessage;
 
   req.method = event.httpMethod;
   req.url = getRequestUrl(event);
@@ -105,36 +104,46 @@ function createFakeResponse(): { response: ServerResponse; state: FakeResponseSt
 }
 
 export const handler: Handler = async (event) => {
-  const req = createFakeRequest(event);
+  try {
+    const req = createFakeRequest(event);
 
-  // 只处理 API 请求
-  if (!req.url?.startsWith('/api/')) {
-    return { statusCode: 404, body: 'Not found' };
+    // 只处理 API 请求
+    if (!req.url?.startsWith('/api/')) {
+      return { statusCode: 404, body: 'Not found' };
+    }
+
+    const { response: res, state, promise } = createFakeResponse();
+
+    const handled =
+      (await handleAiRouteApi(req, res)) ||
+      (await handleAiVisionApi(req, res)) ||
+      (await handleAiJourneyApi(req, res)) ||
+      (await handleSpaceApi(req, res)) ||
+      (await handleSessionApi(req, res));
+
+    if (!handled) {
+      return { statusCode: 404, body: JSON.stringify({ error: 'Not found' }), headers: { 'content-type': 'application/json' } };
+    }
+
+    await promise;
+
+    const singleHeaders: Record<string, string> = {};
+    for (const [key, value] of Object.entries(state.headers)) {
+      singleHeaders[key] = Array.isArray(value) ? value.join(', ') : value;
+    }
+
+    return {
+      statusCode: state.statusCode,
+      headers: singleHeaders,
+      body: state.body,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    console.error('[netlify-api] request failed:', event.httpMethod, event.path, message);
+    return {
+      statusCode: 500,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: message }),
+    };
   }
-
-  const { response: res, state, promise } = createFakeResponse();
-
-  const handled =
-    (await handleAiRouteApi(req, res)) ||
-    (await handleAiVisionApi(req, res)) ||
-    (await handleAiJourneyApi(req, res)) ||
-    (await handleSpaceApi(req, res)) ||
-    (await handleSessionApi(req, res));
-
-  if (!handled) {
-    return { statusCode: 404, body: JSON.stringify({ error: 'Not found' }), headers: { 'content-type': 'application/json' } };
-  }
-
-  await promise;
-
-  const singleHeaders: Record<string, string> = {};
-  for (const [key, value] of Object.entries(state.headers)) {
-    singleHeaders[key] = Array.isArray(value) ? value.join(', ') : value;
-  }
-
-  return {
-    statusCode: state.statusCode,
-    headers: singleHeaders,
-    body: state.body,
-  };
 };

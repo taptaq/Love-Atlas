@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { prisma } from './prisma';
 
@@ -57,6 +58,10 @@ function asArray(value: unknown) {
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function createSessionId() {
+  return randomUUID().slice(0, 8).toUpperCase();
 }
 
 async function persistStructuredState(params: { sessionId: string; sharedState: unknown }) {
@@ -148,7 +153,7 @@ export async function handleSessionApi(request: IncomingMessage, response: Serve
     const body = request.method === 'GET' ? {} : await readBody(request);
 
     if (request.method === 'POST' && request.url === '/api/session/create') {
-      const id = String(body.id ?? '');
+      const id = String(body.id ?? '').trim().toUpperCase() || createSessionId();
       const hostId = String(body.hostId ?? '');
       const sharedState = body.sharedState ?? {};
       const session = await prisma.session.create({

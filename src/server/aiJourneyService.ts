@@ -683,15 +683,151 @@ async function generateDialogueSummary(body: ApiBody) {
   };
 }
 
+function fallbackMomentInfluence(body: ApiBody) {
+  const text = asString(body.text).toLowerCase();
+  const scene = asString(body.scene);
+  const imageTags = asStringArray(body.imageTags);
+  if (scene === 'conflict' || imageTags.includes('conflict') || /吵|争|冷战|生气|抱歉|道歉|conflict|fight|sorry|argue/.test(text)) {
+    return { primaryArea: 'garden', reason: '此刻更适合讨论边界和理解。', weight: 0.72 };
+  }
+  if (imageTags.includes('future') || /未来|计划|以后|约定|期待|future|plan|promise/.test(text)) {
+    return { primaryArea: 'city', reason: '此刻带出了未来和期待。', weight: 0.62 };
+  }
+  if (imageTags.includes('memory') || /想念|回忆|纪念|以前|照片|miss|memory|remember/.test(text)) {
+    return { primaryArea: 'coast', reason: '此刻让共同记忆浮现出来。', weight: 0.62 };
+  }
+  if (imageTags.includes('daily') || imageTags.includes('home') || scene === 'home' || scene === 'cafe') {
+    return { primaryArea: 'valley', reason: '此刻场景适合从日常陪伴进入。', weight: 0.6 };
+  }
+  return { primaryArea: 'forest', reason: '此刻适合从真实感受开始探索。', weight: 0.58 };
+}
+
+function generateJourneyFallback(path: string, body: ApiBody) {
+  if (path.startsWith('/api/ai/theme')) {
+    return {
+      icon: '🌿',
+      title: { cn: '本周小主题', en: 'Weekly Theme' },
+      description: { cn: '从一个轻松时刻开始，重新看见彼此最近的状态。', en: 'Start from a small moment and notice each other again.' },
+      goal: 'connect',
+      stage: 'dating',
+      momentText: { cn: '找一个安静的片刻，说说最近最想被理解的一件小事。', en: 'Find a quiet moment and share one small thing you want understood.' },
+      accent: 'mist',
+    };
+  }
+  if (path.startsWith('/api/ai/question')) {
+    const areas = asStringArray(body.areas).filter((area) => (VALID_AREAS as readonly string[]).includes(area));
+    const region = asArea(areas[0], 'forest');
+    return {
+      question: '今天你最希望对方理解你的哪一部分？',
+      hint: '从一个具体瞬间说起，会更容易靠近。',
+      emotion: 'curious',
+      region,
+      type: 'guess',
+      localized: {
+        cn: '今天你最希望对方理解你的哪一部分？',
+        en: 'What part of you do you most hope the other person understands today?',
+      },
+      localizedHint: {
+        cn: '从一个具体瞬间说起，会更容易靠近。',
+        en: 'Start from a specific moment; it makes closeness easier.',
+      },
+      localizedReason: {
+        cn: 'AI 暂不可用，已使用稳定问题继续旅程。',
+        en: 'AI is temporarily unavailable, so a stable question is used.',
+      },
+      reason: 'AI 暂不可用，已使用稳定问题继续旅程。',
+    };
+  }
+  if (path.startsWith('/api/ai/summary')) {
+    return {
+      resonance: '这次探索让你们看见了彼此当下更真实的状态。',
+      differences: '你们的不同是下一次靠近的起点。',
+      nextTopic: '下次可以从一个更具体的生活片段继续聊。',
+      actionSuggestion: '找一个轻松时刻，复述对方答案里打动你的部分。',
+      generatedBy: 'rules',
+    };
+  }
+  if (path.startsWith('/api/ai/coach')) {
+    return {
+      coach: {
+        cn: '不同是理解的开始。试着问对方：「你这样想是因为什么经历吗？」',
+        en: 'Difference is a doorway to understanding. Try asking what experience shaped this view.',
+      },
+      buffer: {
+        cn: '你们的答案各有角度，这很自然。揭晓时带着好奇去看彼此。',
+        en: 'Your answers come from different angles. Approach the reveal with curiosity.',
+      },
+    };
+  }
+  if (path.startsWith('/api/ai/insights')) {
+    const similarity = Number(body.similarity ?? 0);
+    return {
+      insights: {
+        resonance: similarity >= 45 ? '你们对这个问题有明显重叠的理解。' : '你们从不同角度回应了这个问题。',
+        difference: similarity >= 45 ? '差异不大，更多是表达方式不同。' : '这些不同角度可以成为继续理解的入口。',
+        emotion: '关系地图出现了新的信号。',
+        suggestion: '先好奇地问问对方，这样的想法从哪里来。',
+      },
+    };
+  }
+  if (path.startsWith('/api/ai/similarity')) {
+    return { similarity: Number(body.localSimilarity ?? 0), source: 'fallback' };
+  }
+  if (path === '/api/ai/moment') {
+    return fallbackMomentInfluence(body);
+  }
+  if (path.startsWith('/api/ai/companion')) {
+    return { answer: '我也在想这个问题。说实话，我没有完全想清楚，但和你一起聊让我觉得安心。', ready: true };
+  }
+  if (path.startsWith('/api/ai/followup')) {
+    return {
+      question: '能多说一点你这样想的原因吗？',
+      hint: '从一个具体的瞬间或经历说起会更容易。',
+      reason: '追问是为了看见答案背后的故事。',
+      focusArea: 'emotion',
+      localized: {
+        cn: '能多说一点你这样想的原因吗？',
+        en: 'Can you share more about why you think this way?',
+      },
+      localizedHint: {
+        cn: '从一个具体的瞬间或经历说起会更容易。',
+        en: 'Starting from a specific moment or memory makes it easier.',
+      },
+      localizedReason: {
+        cn: '追问是为了看见答案背后的故事。',
+        en: 'Following up to see the story behind the answer.',
+      },
+    };
+  }
+  if (path.startsWith('/api/ai/dialogue-summary')) {
+    return {
+      trajectory: '你们从不同的角度开始，逐渐看见彼此答案背后的故事。',
+      keyInsight: '不同不是对立，而是两种表达方式。',
+      bridge: '把对方打动你的部分复述给对方听。',
+      integration: '把这次发现作为关系里的小默契。',
+      completedDepth: Number(body.completedDepth ?? 0),
+      isCompleted: Number(body.completedDepth ?? 0) >= 3,
+    };
+  }
+  return {
+    resonance: '这次探索让你们看见了彼此当下更真实的状态。',
+    differences: '你们的不同是下一次靠近的起点。',
+    nextTopic: '下次可以从一个更具体的生活片段继续聊。',
+    actionSuggestion: '找一个轻松时刻，复述对方答案里打动你的部分。',
+    generatedBy: 'rules',
+  };
+}
+
 export async function handleAiJourneyApi(request: IncomingMessage, response: ServerResponse) {
   const path = request.url ? new URL(request.url, 'http://localhost').pathname : '';
   if (!path.startsWith('/api/ai/question') && !path.startsWith('/api/ai/summary') && !path.startsWith('/api/ai/coach') && !path.startsWith('/api/ai/theme') && !path.startsWith('/api/ai/insights') && !path.startsWith('/api/ai/similarity') && path !== '/api/ai/moment' && !path.startsWith('/api/ai/companion') && !path.startsWith('/api/ai/followup') && !path.startsWith('/api/ai/dialogue-summary')) return false;
+  let body: ApiBody = {};
   try {
     if (request.method !== 'POST') {
       sendJson(response, 405, { error: 'Method not allowed' });
       return true;
     }
-    const body = await readBody(request);
+    body = await readBody(request);
     const result = path.startsWith('/api/ai/question')
       ? await generateQuestion(body)
       : path.startsWith('/api/ai/coach')
@@ -714,7 +850,9 @@ export async function handleAiJourneyApi(request: IncomingMessage, response: Ser
     sendJson(response, 200, result);
     return true;
   } catch (error) {
-    sendJson(response, 500, { error: error instanceof Error ? error.message : 'AI journey generation failed' });
+    const message = error instanceof Error ? error.message : 'AI journey generation failed';
+    console.error('[aiJourney] generation failed:', path, message);
+    sendJson(response, 200, generateJourneyFallback(path, body));
     return true;
   }
 }
