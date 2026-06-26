@@ -5,6 +5,9 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # These values are provider URL/model identifiers, not secrets. Netlify's
+  # scanner compares all env var values against repo files, including examples.
+  SECRETS_SCAN_OMIT_KEYS = "MINICPM_V_API_URL,MINICPM_V_MODEL"
 
 [functions]
   node_bundler = "esbuild"
