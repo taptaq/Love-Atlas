@@ -18,15 +18,38 @@ interface FakeResponseState {
   body: string;
 }
 
+function getEventQuery(event: Parameters<Handler>[0]) {
+  const rawQuery = (event as { rawQuery?: unknown }).rawQuery;
+  if (typeof rawQuery === 'string') return rawQuery;
+  try {
+    return new URL(event.rawUrl ?? '', `https://${event.headers.host ?? 'localhost'}`).search.slice(1);
+  } catch {
+    return '';
+  }
+}
+
+function getRequestUrl(event: Parameters<Handler>[0]) {
+  const path = event.path ?? '';
+  if (path.startsWith('/api/')) {
+    const query = getEventQuery(event);
+    return `${path}${query ? `?${query}` : ''}`;
+  }
+
+  try {
+    const parsed = new URL(event.rawUrl ?? path, `https://${event.headers.host ?? 'localhost'}`);
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return path;
+  }
+}
+
 function createFakeRequest(event: Parameters<Handler>[0]): IncomingMessage {
   const raw = event.isBase64Encoded ? Buffer.from(event.body ?? '', 'base64') : Buffer.from(event.body ?? '', 'utf8');
   const stream = Readable.from([raw]);
   const req = Object.create(stream) as IncomingMessage;
 
-  const rawUrl = event.rawUrl ?? event.path ?? '';
-  const [pathname, search] = rawUrl.split('?');
   req.method = event.httpMethod;
-  req.url = pathname + (search ? `?${search}` : '');
+  req.url = getRequestUrl(event);
   req.headers = {
     host: event.headers.host ?? 'localhost',
     'content-type': event.headers['content-type'] ?? 'application/json',
@@ -82,12 +105,13 @@ function createFakeResponse(): { response: ServerResponse; state: FakeResponseSt
 }
 
 export const handler: Handler = async (event) => {
+  const req = createFakeRequest(event);
+
   // 只处理 API 请求
-  if (!event.path?.startsWith('/api/')) {
+  if (!req.url?.startsWith('/api/')) {
     return { statusCode: 404, body: 'Not found' };
   }
 
-  const req = createFakeRequest(event);
   const { response: res, state, promise } = createFakeResponse();
 
   const handled =
