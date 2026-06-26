@@ -113,13 +113,17 @@ button {
   z-index: 20;
   top: 20px;
   right: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
   border: 3px solid #f6b63f;
   border-radius: var(--radius-pill);
-  padding: 12px 28px;
+  padding: 10px 24px;
   background: rgba(30, 36, 70, 0.88);
   color: white;
   font-weight: 800;
-  font-size: 22px;
+  font-size: 18px;
   box-shadow: 0 14px 35px rgba(0, 0, 0, 0.25);
   cursor: pointer;
 }
@@ -136,13 +140,13 @@ button {
   position: fixed;
   z-index: 20;
   top: 20px;
-  right: 196px;
-  width: 44px;
-  height: 44px;
+  right: 176px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid rgba(246, 182, 63, 0.5);
+  border: 3px solid rgba(246, 182, 63, 0.5);
   border-radius: var(--radius-circle);
   background: rgba(30, 36, 70, 0.88);
   color: #fff;
@@ -170,13 +174,15 @@ button {
 .auth-button {
   display: inline-flex;
   align-items: center;
-  border: 2px solid rgba(246, 182, 63, 0.7);
+  justify-content: center;
+  min-height: 44px;
+  border: 3px solid rgba(246, 182, 63, 0.7);
   border-radius: var(--radius-pill);
-  padding: 8px 16px;
+  padding: 10px 24px;
   background: rgba(30, 36, 70, 0.88);
   color: #fff7ed;
-  font-weight: 700;
-  font-size: 14px;
+  font-weight: 800;
+  font-size: 18px;
   box-shadow: 0 14px 35px rgba(0, 0, 0, 0.25);
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease;
@@ -4026,8 +4032,9 @@ button {
   .language-toggle {
     right: 14px;
     top: 14px;
+    min-height: 36px;
     font-size: 14px;
-    padding: 8px 14px;
+    padding: 6px 14px;
   }
 
   .theme-toggle {
@@ -4045,8 +4052,9 @@ button {
   }
 
   .auth-button {
+    min-height: 36px;
     font-size: 13px;
-    padding: 8px 14px;
+    padding: 6px 14px;
   }
 
   .auth-button-label {
