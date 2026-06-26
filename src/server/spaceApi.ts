@@ -521,10 +521,9 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
 
     if (request.method === 'GET' && request.url.startsWith('/api/spaces/explorations/detail/')) {
       const explorationId = decodeURIComponent(request.url.replace('/api/spaces/explorations/detail/', ''));
-      const [exploration, abInteractions, mirrorEvents, summaries] = await Promise.all([
+      const [exploration, abInteractions, summaries] = await Promise.all([
         prisma.explorationSession.findUnique({ where: { id: explorationId } }),
         prisma.abInteraction.findMany({ where: { explorationId }, orderBy: { createdAt: 'asc' } }),
-        prisma.mirrorEvent.findMany({ where: { explorationId }, orderBy: { createdAt: 'asc' } }),
         prisma.sessionSummary.findMany({ where: { explorationId }, orderBy: { createdAt: 'desc' } }),
       ]);
       if (!exploration) {
@@ -540,19 +539,6 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
           question_text: item.questionText,
           host_answer: item.hostAnswer,
           partner_answer: item.partnerAnswer,
-          result: item.result,
-          created_at: item.createdAt.toISOString(),
-          completed_at: item.completedAt?.toISOString() ?? null,
-        })),
-        mirrorEvents: mirrorEvents.map((item) => ({
-          id: item.id,
-          event_key: item.eventKey,
-          title: item.title,
-          prompt: item.prompt,
-          host_choice: item.hostChoice,
-          partner_choice: item.partnerChoice,
-          host_reflection: item.hostReflection,
-          partner_reflection: item.partnerReflection,
           result: item.result,
           created_at: item.createdAt.toISOString(),
           completed_at: item.completedAt?.toISOString() ?? null,
@@ -674,7 +660,7 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
               .map((e) => e.legacySessionId)
               .filter((id): id is string => Boolean(id));
 
-            // 删除 RelationshipSpace（级联删除 members, explorations, exploration states, abInteractions, mirrorEvents, presentMoments, mapStates, discoveries, summaries）
+            // 删除 RelationshipSpace（级联删除 members, explorations, exploration states, abInteractions, presentMoments, mapStates, discoveries, summaries）
             await transaction.relationshipSpace.delete({ where: { id: space.id } });
 
             // 手动删除 legacy Session 记录（Session 表不会被 RelationshipSpace 级联删除）

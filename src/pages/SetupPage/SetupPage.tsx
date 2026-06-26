@@ -1,21 +1,58 @@
-import { journeyLengths, relationshipStages } from '../../features/relationship/relationship.config';
+import { relationshipStages } from '../../features/relationship/relationship.config';
 import { useJourneyStore, useUiStore } from '../../store';
+import type { Language, MoodTag } from '../../types';
+
+// 情绪签到选项
+const MOOD_OPTIONS: Array<{ id: MoodTag; icon: string; label: Record<Language, string> }> = [
+  { id: 'calm', icon: '🌿', label: { cn: '平静', en: 'Calm' } },
+  { id: 'expectant', icon: '✨', label: { cn: '期待', en: 'Expectant' } },
+  { id: 'tired', icon: '🌙', label: { cn: '疲惫', en: 'Tired' } },
+  { id: 'anxious', icon: '🌊', label: { cn: '焦虑', en: 'Anxious' } },
+  { id: 'happy', icon: '🌸', label: { cn: '开心', en: 'Happy' } },
+  { id: 'low', icon: '🌧', label: { cn: '低落', en: 'Low' } },
+  { id: 'curious', icon: '🔍', label: { cn: '好奇', en: 'Curious' } },
+  { id: 'missing', icon: '💭', label: { cn: '想念', en: 'Missing' } },
+];
 
 export function SetupPage() {
   const language = useUiStore((state) => state.language);
   const relationshipStage = useJourneyStore((state) => state.relationshipStage);
   const setRelationshipStage = useJourneyStore((state) => state.setRelationshipStage);
-  const journeyLength = useJourneyStore((state) => state.journeyLength);
-  const setJourneyLength = useJourneyStore((state) => state.setJourneyLength);
+  const currentMood = useJourneyStore((state) => state.currentMood);
+  const setCurrentMood = useJourneyStore((state) => state.setCurrentMood);
   const nextStep = useJourneyStore((state) => state.nextStep);
   const goToStep = useJourneyStore((state) => state.goToStep);
+  const cn = language === 'cn';
 
   return (
     <main className="page flow-page">
       <section className="flow-header">
-        <span className="step-pill">01 / {language === 'cn' ? '关系阶段' : 'Setup'}</span>
-        <h1>{language === 'cn' ? '你们现在处于什么阶段？' : 'Where is your relationship now?'}</h1>
-        <p>{language === 'cn' ? '关系阶段会影响目标推荐、地图路线和 Mirror Event 信号。' : 'Relationship stage shapes goal recommendations, route, and Mirror Event signals.'}</p>
+        <span className="step-pill">01 / {cn ? '关系阶段' : 'Setup'}</span>
+        <h1>{cn ? '你们现在处于什么阶段？' : 'Where is your relationship now?'}</h1>
+        <p>{cn ? '关系阶段会影响目标推荐、地图路线和问题深度。' : 'Relationship stage shapes goal recommendations, route, and question depth.'}</p>
+      </section>
+
+      {/* 情绪签到：轻量可选，影响第一题方向 */}
+      <section className="mood-checkin-section" aria-label={cn ? '情绪签到' : 'Mood Check-in'}>
+        <div className="mood-checkin-header">
+          <span className="mood-checkin-eyebrow">{cn ? '此刻的你' : 'How are you right now?'}</span>
+          <small className="mood-checkin-hint">{cn ? '选一个最接近的，会影响第一题的方向（可跳过）' : 'Pick the closest one — it shapes the first question (skippable)'}</small>
+        </div>
+        <div className="mood-checkin-grid" role="radiogroup" aria-label={cn ? '选择当前情绪' : 'Select your mood'}>
+          {MOOD_OPTIONS.map((mood) => (
+            <button
+              key={mood.id}
+              type="button"
+              role="radio"
+              aria-checked={currentMood === mood.id}
+              className={`mood-chip ${currentMood === mood.id ? 'mood-chip-selected' : ''}`}
+              onClick={() => setCurrentMood(currentMood === mood.id ? null : mood.id)}
+            >
+              <span className="mood-chip-icon" aria-hidden="true">{mood.icon}</span>
+              <span className="mood-chip-label">{mood.label[language]}</span>
+            </button>
+          ))}
+        </div>
       </section>
 
       <section className="option-grid">
@@ -33,33 +70,12 @@ export function SetupPage() {
         ))}
       </section>
 
-      <section className="flow-header">
-        <span className="step-pill">{language === 'cn' ? '旅程长度' : 'Journey Length'}</span>
-        <h2>{language === 'cn' ? '今天想聊多深？' : 'How deep today?'}</h2>
-        <p>{language === 'cn' ? '选择本次探索的问题数量。' : 'Choose how many questions for this exploration.'}</p>
-      </section>
-
-      <section className="option-grid">
-        {journeyLengths.map((option) => (
-          <button
-            className={`option-card ${journeyLength === option.id ? 'selected' : ''}`}
-            key={option.id}
-            type="button"
-            onClick={() => setJourneyLength(option.id)}
-          >
-            <span className="option-icon">{option.icon}</span>
-            <strong>{option.label[language]}</strong>
-            <small>{option.description[language]}</small>
-          </button>
-        ))}
-      </section>
-
       <div className="flow-actions">
         <button type="button" onClick={() => goToStep('home')}>
-          {language === 'cn' ? '返回首页' : 'Back Home'}
+          {cn ? '返回首页' : 'Back Home'}
         </button>
         <button className="primary-btn" disabled={!relationshipStage} type="button" onClick={nextStep}>
-          {language === 'cn' ? '继续生成目标' : 'Continue to Goals'}
+          {cn ? '继续选择目标' : 'Continue to Goals'}
         </button>
       </div>
     </main>

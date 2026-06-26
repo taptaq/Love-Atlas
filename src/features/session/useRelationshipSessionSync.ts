@@ -23,7 +23,6 @@ export function selectRelationshipSharedState(state: JourneyStoreState): Relatio
     relationshipStage: state.relationshipStage,
     goal: state.goal,
     route: state.route,
-    mirrorEvent: state.mirrorEvent,
     presentMoment: state.presentMoment,
     abAnswers: syncedAbAnswers,
     abInteraction: syncedAbAnswers,
@@ -32,10 +31,8 @@ export function selectRelationshipSharedState(state: JourneyStoreState): Relatio
     summary: state.summary,
     currentQuestionIndex: state.currentQuestionIndex,
     currentQuestion: state.currentQuestion,
-    journeyLength: state.journeyLength,
     journeyHistory: state.journeyHistory,
     events: state.events,
-    currentEvent: state.currentEvent,
   };
 }
 

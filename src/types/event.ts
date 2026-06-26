@@ -1,6 +1,6 @@
 import type { LocalizedText } from './i18n';
 
-export type EventType = 'memory' | 'switch' | 'mirror' | 'moment' | 'future' | 'silence';
+export type EventType = 'memory' | 'switch' | 'moment' | 'future' | 'silence';
 
 export interface RelationshipEvent {
   type: EventType;

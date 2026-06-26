@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { requestAuthPopover } from '../../components/auth/AuthButton';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { DailyQuestion } from '../../components/ui/DailyQuestion';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { SpaceOnboarding } from '../../components/ui/SpaceOnboarding';
 import { TermTooltip } from '../../components/ui/TermTooltip';
 import { WeeklyBlindBox } from '../../components/ui/WeeklyBlindBox';
-import { ReminderBanner } from '../../components/ui/ReminderBanner';
 import { friendlyError } from '../../utils/friendlyError';
 import type { WeeklyTheme } from '../../services/weeklyBlindBoxService';
 import { getDiscoveryCopy } from '../../features/discovery/discoveryI18n';
@@ -17,6 +17,7 @@ import { selectRelationshipSharedState } from '../../features/session/useRelatio
 import { t } from '../../i18n';
 import { useDiscoveryStore, useJourneyStore, useUiStore } from '../../store';
 import type { ExplorationSession, SpaceApiResult } from '../../types/space';
+import type { JourneyQuestion } from '../../types';
 
 export function HomePage({ memberCount }: { memberCount: number }) {
   const language = useUiStore((state) => state.language);
@@ -308,6 +309,23 @@ export function HomePage({ memberCount }: { memberCount: number }) {
     }
   };
 
+  // 今日一问：跳过 setup/goal/route，直接用预设问题进入旅程
+  const handleStartDailyQuestion = (question: JourneyQuestion) => {
+    const store = useJourneyStore.getState();
+    if (hasSpace && (partnerJoined || isCompanion)) {
+      store.startJourneyWithDailyQuestion(question);
+      return;
+    }
+    if (hasSpace && !partnerJoined && !isCompanion) {
+      setSpaceError(cn ? '问题已准备好，请等待对方加入空间后再开启探索。' : 'Question is ready. Please wait for your partner to join before starting.');
+      return;
+    }
+    // 没有空间：先创建临时空间，再开始
+    void handleCreateTemporarySpace().then(() => {
+      useJourneyStore.getState().startJourneyWithDailyQuestion(question);
+    });
+  };
+
   return (
     <main className="page home-page space-home-page">
       <LoadingOverlay
@@ -353,8 +371,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
 
       <WeeklyBlindBox onStart={handleStartBlindBoxTheme} />
 
-      {/* 提醒功能暂时关闭，后续修复后再启用 */}
-      {/* <ReminderBanner /> */}
+      <DailyQuestion onStart={handleStartDailyQuestion} />
 
       <section className={hasSpace ? 'space-entry-layout' : 'space-entry-layout space-entry-layout-single'}>
         <article className="space-primary-card">

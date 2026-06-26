@@ -1,5 +1,7 @@
 export type DiscoveryCategory = 'event' | 'region' | 'journey' | 'special';
 
+export type DiscoveryRarity = 'common' | 'rare' | 'hidden';
+
 export interface DiscoveryCondition {
   event?: string;
   region?: string;
@@ -16,7 +18,6 @@ export interface DiscoveryCondition {
   eventCount?: number;
   recentExplore?: boolean;
   firstMomentUpload?: boolean;
-  mirrorCount?: number;
   coastCount?: number;
   nightExplore?: boolean;
   deepJourney?: boolean;
@@ -33,6 +34,8 @@ export interface DiscoveryItem {
   category: DiscoveryCategory;
   condition: DiscoveryCondition;
   hidden: boolean;
+  rarity: DiscoveryRarity;
+  hint: string;
 }
 
 export interface UnlockedDiscovery {

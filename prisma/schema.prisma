@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -24,7 +25,6 @@ model Session {
   participants      SessionParticipant[]
   flowProgress      SessionFlowProgress?
   abInteractions    AbInteraction[]
-  mirrorEvents      MirrorEvent[]
   presentMoments    PresentMoment[]
   mapState          RelationshipMapState?
   discoveries       Discovery[]
@@ -96,32 +96,6 @@ model AbInteraction {
   @@index([explorationId])
   @@index([questionId])
   @@map("ab_interactions")
-}
-
-model MirrorEvent {
-  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sessionId         String              @map("session_id")
-  spaceId           String?             @map("space_id") @db.Uuid
-  explorationId     String?             @map("exploration_id") @db.Uuid
-  eventKey          String?             @map("event_key")
-  title             String
-  prompt            String
-  hostChoice        String?             @map("host_choice")
-  partnerChoice     String?             @map("partner_choice")
-  hostReflection    String?             @map("host_reflection")
-  partnerReflection String?             @map("partner_reflection")
-  result            Json?
-  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  completedAt       DateTime?           @map("completed_at") @db.Timestamptz(6)
-  session           Session             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  space             RelationshipSpace?  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  exploration       ExplorationSession? @relation(fields: [explorationId], references: [id], onDelete: Cascade)
-
-  @@index([sessionId])
-  @@index([spaceId])
-  @@index([explorationId])
-  @@index([eventKey])
-  @@map("mirror_events")
 }
 
 model PresentMoment {
@@ -216,7 +190,6 @@ model RelationshipSpace {
   members                RelationshipSpaceMember[]
   explorations           ExplorationSession[]
   abInteractions         AbInteraction[]
-  mirrorEvents           MirrorEvent[]
   presentMoments         PresentMoment[]
   mapStates              RelationshipMapState[]
   discoveries            Discovery[]
@@ -270,7 +243,6 @@ model ExplorationSession {
   legacySession     Session?          @relation(fields: [legacySessionId], references: [id], onDelete: SetNull)
   state             ExplorationState?
   abInteractions    AbInteraction[]
-  mirrorEvents      MirrorEvent[]
   presentMoments    PresentMoment[]
   discoveries       Discovery[]
   summaries         SessionSummary[]

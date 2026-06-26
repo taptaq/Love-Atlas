@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:all": "concurrently -n vite,server -c magenta,yellow \"vite\" \"tsx src/server/index.ts\"",
-    "build": "tsc -b && vite build",
+    "build": "prisma generate && tsc -b && vite build",
+    "build:netlify": "prisma generate && tsc -b && vite build",
     "preview": "vite preview",
     "serve": "tsx src/server/index.ts",
     "spaces:cleanup": "tsx scripts/cleanupExpiredSpaces.ts",
@@ -32,6 +33,7 @@
     "zustand": "5.0.9"
   },
   "devDependencies": {
+    "@netlify/functions": "^5.3.0",
     "@types/node": "20.19.27",
     "@types/react": "18.3.27",
     "@types/react-dom": "18.3.7",

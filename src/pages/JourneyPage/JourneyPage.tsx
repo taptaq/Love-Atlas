@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { generateAiCoach, generateAiCompanionAnswer } from '../../features/relationship/aiJourneyService';
 import { SIMILARITY_THRESHOLD } from '../../features/relationship/journeyConfig';
 import { mapAreaConfig } from '../../features/map/map.config';
-import { getJourneyQuestionCount } from '../../features/relationship/relationship.config';
 import { useSessionStore } from '../../features/session/useSessionStore';
 import { useSpaceStore } from '../../features/session/useSpaceStore';
 import { useJourneyStore, useUiStore } from '../../store';
@@ -14,7 +13,6 @@ export function JourneyPage() {
   const language = useUiStore((state) => state.language);
   const currentQuestion = useJourneyStore((state) => state.currentQuestion);
   const currentQuestionIndex = useJourneyStore((state) => state.currentQuestionIndex);
-  const journeyLength = useJourneyStore((state) => state.journeyLength);
   const abAnswers = useJourneyStore((state) => state.abAnswers);
   const worldState = useJourneyStore((state) => state.worldState);
   const relationshipStage = useJourneyStore((state) => state.relationshipStage);
@@ -166,12 +164,12 @@ export function JourneyPage() {
       if (!cancelled) {
         setCoachAdvice({
           coach: {
-            cn: '差异不是问题，而是理解的入口。试着问对方：「你这样想是因为什么经历吗？」',
-            en: 'Difference is not a problem but a doorway. Try asking: "What experience shaped this view for you?"',
+            cn: '不同是理解的开始。试着问对方：「你这样想是因为什么经历吗？」',
+            en: 'Difference is a doorway to understanding. Try asking: "What experience shaped this view for you?"',
           },
           buffer: {
-            cn: '你们的答案不太一样，这很正常。揭晓时先深呼吸，带着好奇而不是评判去看。',
-            en: 'Your answers may differ, and that is okay. Take a breath before revealing — approach with curiosity, not judgment.',
+            cn: '你们的答案各有角度，这很自然。揭晓时先深呼吸，带着好奇去看彼此。',
+            en: 'Your answers come from different angles, and that is natural. Take a breath before revealing — look at each other with curiosity.',
           },
         });
         setCoachLoading(false);
@@ -196,8 +194,6 @@ export function JourneyPage() {
 
   const area = mapAreaConfig[currentQuestion.region];
   const questionNumber = currentQuestionIndex + 1;
-  const totalQuestions = getJourneyQuestionCount(journeyLength);
-  const isLastQuestion = questionNumber >= totalQuestions;
 
   // 角色映射：host = A（我），partner = B（对方）
   const isHost = role === 'host';
@@ -233,7 +229,7 @@ export function JourneyPage() {
         <LoadingOverlay visible={true} message={cn ? 'AI 正在生成下一题…' : 'AI is generating the next question…'} />
       )}
       <section className="flow-header">
-        <span className="step-pill">04 / {cn ? <TermTooltip explanation={{ cn: '由若干问题组成的对话流程，每答完一题世界地图会更新', en: 'A conversation flow of several questions; each answer updates your world map' }}>探索旅程</TermTooltip> : 'Journey'} · {cn ? `第 ${questionNumber} / ${totalQuestions} 题` : `Question ${questionNumber} / ${totalQuestions}`}</span>
+        <span className="step-pill">04 / {cn ? <TermTooltip explanation={{ cn: '由若干问题组成的对话流程，每答完一题世界地图会更新', en: 'A conversation flow of several questions; each answer updates your world map' }}>探索旅程</TermTooltip> : 'Journey'} · {cn ? `第 ${questionNumber} 题` : `Question ${questionNumber}`}</span>
         <h1>{area.icon} {area.label[language]}</h1>
         <p>{currentQuestion.localizedReason?.[language] ?? currentQuestion.reason}</p>
       </section>
@@ -360,14 +356,14 @@ export function JourneyPage() {
         <section className="coach-card coach-loading-card" aria-live="polite">
           <span className="eyebrow">{cn ? 'AI 沟通教练' : 'AI Communication Coach'}</span>
           <h2>{cn ? '正在为你们生成沟通建议…' : 'Generating communication advice…'}</h2>
-          <p className="coach-buffer">{cn ? '差异是理解的入口，稍等片刻。' : 'Difference is a doorway. One moment.'}</p>
+          <p className="coach-buffer">{cn ? '不同是理解的开始，稍等片刻。' : 'Difference is a doorway. One moment.'}</p>
         </section>
       )}
 
       {abAnswers.revealVisible && !coachLoading && coachAdvice && (
         <section className="coach-card">
           <span className="eyebrow">{cn ? 'AI 沟通教练' : 'AI Communication Coach'}</span>
-          <h2>{cn ? '你们的答案有差异，这很正常' : 'Your answers differ, and that is okay'}</h2>
+          <h2>{cn ? '你们的答案各有角度，这很自然' : 'Your answers come from different angles, and that is natural'}</h2>
           <p className="coach-buffer">{cn ? coachAdvice.buffer.cn : coachAdvice.buffer.en}</p>
           <p className="coach-suggestion">{cn ? coachAdvice.coach.cn : coachAdvice.coach.en}</p>
         </section>
@@ -525,17 +521,24 @@ export function JourneyPage() {
         <section className="deep-dialogue-loading" aria-live="polite">
           <span className="eyebrow">{cn ? '🔗 深度对话' : '🔗 Deep Dialogue'}</span>
           <h2>{cn ? '正在为你们准备更深的对话…' : 'Preparing a deeper dialogue for you…'}</h2>
-          <p>{cn ? 'AI 正在基于你们的答案差异生成追问。' : 'AI is crafting a follow-up based on your differences.'}</p>
+          <p>{cn ? 'AI 正在基于你们的不同视角生成追问。' : 'AI is crafting a follow-up based on your different perspectives.'}</p>
         </section>
       )}
 
-      {/* 深度对话入口按钮（原题揭晓后，未开启深度对话时） */}
-      {abAnswers.revealVisible && dialogueDepth === 0 && !dialogueSummary && !isGeneratingFollowup && abAnswers.similarity < SIMILARITY_THRESHOLD.MEDIUM && (
+      {/* 深度对话入口按钮（原题揭晓后，未开启深度对话时）
+          低共鸣（<30%）探索差异，高共鸣（≥70%）深化连接 */}
+      {abAnswers.revealVisible && dialogueDepth === 0 && !dialogueSummary && !isGeneratingFollowup && (abAnswers.similarity < SIMILARITY_THRESHOLD.MEDIUM || abAnswers.similarity >= SIMILARITY_THRESHOLD.DEEP_RESONANCE) && (
         <div className="deep-dialogue-entry">
           <button className="secondary-btn deep-dialogue-btn" type="button" disabled={isGeneratingFollowup} onClick={() => void startDeepDialogue()}>
-            {cn ? '🔗 继续深度对话 1/3' : '🔗 Go deeper 1/3'}
+            {abAnswers.similarity >= SIMILARITY_THRESHOLD.DEEP_RESONANCE
+              ? (cn ? '✨ 深化这份共鸣 1/3' : '✨ Deepen this resonance 1/3')
+              : (cn ? '🔗 继续深度对话 1/3' : '🔗 Go deeper 1/3')}
           </button>
-          <p className="deep-dialogue-hint">{cn ? '你们的答案有差异，可以继续深挖背后的故事（最多 3 层）' : 'Your answers differ — go deeper into the story behind (up to 3 layers)'}</p>
+          <p className="deep-dialogue-hint">
+            {abAnswers.similarity >= SIMILARITY_THRESHOLD.DEEP_RESONANCE
+              ? (cn ? '你们的答案产生了共鸣，可以继续深化这份连接（最多 3 层）' : 'Your answers resonated — deepen this connection (up to 3 layers)')
+              : (cn ? '你们从不同角度回应了这题，可以继续深挖背后的故事（最多 3 层）' : 'Your answers came from different angles — go deeper into the story behind (up to 3 layers)')}
+          </p>
         </div>
       )}
 
@@ -552,20 +555,12 @@ export function JourneyPage() {
 
       {abAnswers.revealVisible && (
         <div className="flow-actions">
-          {isLastQuestion ? (
-            <button className="primary-btn" type="button" onClick={endJourney}>
-              {cn ? '完成探索' : 'Finish Exploration'}
-            </button>
-          ) : (
-            <>
-              <button className="primary-btn" type="button" disabled={isGeneratingNextQuestion} onClick={goToNextQuestion}>
-                {isGeneratingNextQuestion ? (cn ? 'AI 出题中…' : 'AI generating…') : (cn ? '继续探索' : 'Keep Exploring')}
-              </button>
-              <button type="button" disabled={isGeneratingNextQuestion} onClick={endJourney}>
-                {cn ? '结束探索' : 'End Exploration'}
-              </button>
-            </>
-          )}
+          <button className="primary-btn" type="button" disabled={isGeneratingNextQuestion} onClick={goToNextQuestion}>
+            {isGeneratingNextQuestion ? (cn ? 'AI 出题中…' : 'AI generating…') : (cn ? '继续探索' : 'Keep Exploring')}
+          </button>
+          <button type="button" disabled={isGeneratingNextQuestion} onClick={endJourney}>
+            {cn ? '结束探索' : 'End Exploration'}
+          </button>
         </div>
       )}
     </main>

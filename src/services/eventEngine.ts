@@ -1,19 +1,17 @@
 import type { EventType, LocalizedText, MapArea, QuestionType, RelationshipEvent } from '../types';
-import { MIRROR_TRIGGER_SIMILARITY, HIGH_RESONANCE_SIMILARITY, FOREST_MIRROR_THRESHOLD } from '../features/relationship/journeyConfig';
 
 function text(cn: string, en: string): LocalizedText {
   return { cn, en };
 }
 
-const regionEventMap: Record<MapArea, EventType> = {
-  forest: 'mirror',
+const regionEventMap: Partial<Record<MapArea, EventType>> = {
   coast: 'memory',
   valley: 'moment',
   city: 'future',
   garden: 'switch',
 };
 
-const eventTemplates: Record<Exclude<EventType, 'mirror'>, Omit<RelationshipEvent, 'timestamp' | 'unlockedByAI'>> = {
+const eventTemplates: Record<EventType, Omit<RelationshipEvent, 'timestamp' | 'unlockedByAI'>> = {
   memory: {
     type: 'memory',
     icon: '🌊',
@@ -57,33 +55,17 @@ const eventTemplates: Record<Exclude<EventType, 'mirror'>, Omit<RelationshipEven
   },
 };
 
-export function createMirrorEvent(memorySeed: string): RelationshipEvent {
-  return {
-    type: 'mirror',
-    icon: '🪞',
-    title: text('镜像时刻', 'Mirror Moment'),
-    description: text('你们的回答里出现了值得互相确认的差异。', 'Your answers revealed a difference worth checking together.'),
-    action: text('进入镜像', 'Enter Mirror'),
-    question: text(memorySeed || '如果站在对方的位置，你觉得 TA 真正想表达什么？', memorySeed || 'If you stood in their place, what do you think they truly meant?'),
-    timestamp: new Date().toISOString(),
-    unlockedByAI: true,
-  };
-}
-
 export function generateRelationshipEvent(input: {
   region: MapArea;
   questionType: QuestionType;
   similarity: number;
   hasMoment: boolean;
-  forceMirror?: boolean;
-  memorySeed?: string;
 }): RelationshipEvent | null {
-  if (input.forceMirror) return createMirrorEvent(input.memorySeed ?? '');
-  if (input.questionType === 'mirror' && input.similarity < MIRROR_TRIGGER_SIMILARITY) return createMirrorEvent(input.memorySeed ?? '');
   if (input.hasMoment && input.region === 'valley') return withRuntime(eventTemplates.moment);
-  if (input.similarity > HIGH_RESONANCE_SIMILARITY && input.region !== 'city') return null;
+  // 相似度 > 72 视为高共鸣，不触发事件
+  if (input.similarity > 72 && input.region !== 'city') return null;
   const eventType = regionEventMap[input.region];
-  if (eventType === 'mirror') return input.similarity < FOREST_MIRROR_THRESHOLD ? createMirrorEvent(input.memorySeed ?? '') : null;
+  if (!eventType) return null;
   if (eventType === 'future' && input.questionType !== 'choice') return null;
   return withRuntime(eventTemplates[eventType]);
 }
@@ -98,7 +80,6 @@ function withRuntime(template: Omit<RelationshipEvent, 'timestamp' | 'unlockedBy
 
 export function createEventCompletionMessage(event: RelationshipEvent): LocalizedText {
   const messages: Record<EventType, LocalizedText> = {
-    mirror: text('镜像事件已完成，差异被看见后会返回原旅程。', 'Mirror Event completed. The route continues after the difference is seen.'),
     memory: text('回忆被重新看见，关系世界的海岸留下了新的痕迹。', 'A memory was seen again, leaving a new trace on the coast.'),
     switch: text('视角已经交换，差异不再只是阻隔。', 'Perspectives were switched, and difference is no longer only distance.'),
     moment: text('此刻被记录下来，旅程带着现场感继续。', 'This moment was recorded, and the journey continues with context.'),

@@ -69,7 +69,7 @@ export function ExplorationHistoryPage() {
       <section className="flow-header">
         <span className="step-pill">{language === 'cn' ? '历史探索' : 'Past Explorations'}</span>
         <h1>{language === 'cn' ? '查看你们的探索沉淀' : 'Review your exploration history'}</h1>
-        <p>{language === 'cn' ? '点击任意一次探索，可以查看本次 AB 回顾、镜像时刻和总结。' : 'Pick any exploration to review AB, mirror moments, and summaries.'}</p>
+        <p>{language === 'cn' ? '点击任意一次探索，可以查看本次 AB 回顾和总结。' : 'Pick any exploration to review AB and summaries.'}</p>
       </section>
 
       <section className="exploration-history-panel">
@@ -106,7 +106,7 @@ export function ExplorationHistoryPage() {
             <div className="detail-loading-state" aria-label={language === 'cn' ? '正在加载探索详情' : 'Loading exploration detail'}>
               <div className="loading-orbit" />
               <strong>{language === 'cn' ? '正在整理这次探索' : 'Preparing this exploration'}</strong>
-              <p>{language === 'cn' ? 'AB 回顾、镜像时刻和总结会在这里展开。' : 'AB review, mirror moments, and summaries will unfold here.'}</p>
+              <p>{language === 'cn' ? 'AB 回顾和总结会在这里展开。' : 'AB review and summaries will unfold here.'}</p>
               <div className="detail-skeleton-grid">
                 <span />
                 <span />
@@ -122,16 +122,6 @@ export function ExplorationHistoryPage() {
                     <strong>{item.question_text}</strong>
                     <p>A：{item.host_answer || '-'}</p>
                     <p>B：{item.partner_answer || '-'}</p>
-                  </article>
-                ))}
-              </section>
-              <section>
-                <h3>{language === 'cn' ? '镜像时刻回放' : 'Mirror Replay'}</h3>
-                {explorationDetail.mirrorEvents.length === 0 ? <div className="detail-empty-state detail-empty-state-compact"><strong>{language === 'cn' ? '暂无镜像时刻' : 'No mirror moments'}</strong><p>{language === 'cn' ? '本次探索没有触发镜像事件。' : 'No mirror event was triggered this time.'}</p></div> : explorationDetail.mirrorEvents.map((item) => (
-                  <article className="history-mini-card" key={item.id}>
-                    <strong>{item.title}</strong>
-                    <p>{item.prompt}</p>
-                    {item.host_reflection && <small>{item.host_reflection}</small>}
                   </article>
                 ))}
               </section>

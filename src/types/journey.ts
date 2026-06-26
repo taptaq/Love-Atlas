@@ -3,9 +3,10 @@ import type { LocalizedText } from './i18n';
 import type { MapArea, WorldChange } from './map';
 import type { PresentMomentState } from './presentMoment';
 
-export type StepFlow = 'home' | 'setup' | 'goal' | 'route' | 'journey' | 'event' | 'summary' | 'world' | 'discoveryAtlas' | 'explorationHistory' | 'spaceManagement' | 'spaceLibrary' | 'mirrorEngine';
+export type StepFlow = 'home' | 'setup' | 'goal' | 'route' | 'journey' | 'summary' | 'world' | 'discoveryAtlas' | 'explorationHistory' | 'spaceManagement' | 'spaceLibrary';
 
-export type JourneyLength = 'short' | 'normal' | 'deep';
+// 情绪签到标签
+export type MoodTag = 'calm' | 'expectant' | 'tired' | 'anxious' | 'happy' | 'low' | 'curious' | 'missing';
 
 export type QuestionType = 'guess' | 'mirror' | 'choice' | 'sync';
 

@@ -55,9 +55,8 @@ const sharedState = {
   }],
   currentQuestion: { id: 'q2', question: 'B?' },
   abAnswers: { answerA: 'aa', answerB: 'bb', revealVisible: true },
-  mirrorEvent: { completed: true, decision: 'tap', memorySeed: 'seed' },
-  currentEvent: { id: 'e1', title: 'Mirror', prompt: 'p' },
-  events: [{ id: 'e1', title: 'Mirror', prompt: 'p' }],
+  currentEvent: { id: 'e1', title: 'Memory', prompt: 'p' },
+  events: [{ id: 'e1', title: 'Memory', prompt: 'p' }],
   summary: { resonance: 'summary', discoveries: ['d1'], worldChanges: ['w1'], events: ['e1'] },
 };
 
@@ -71,7 +70,6 @@ try {
   await call(handleSessionApi, 'POST', '/api/session/state', { sessionId: created.session.id, sharedState });
   const detail = await call(handleSpaceApi, 'GET', `/api/spaces/explorations/detail/${created.exploration.id}`);
   assert(detail.abInteractions.length >= 2, 'AB interactions should be persisted');
-  assert(detail.mirrorEvents.length >= 1, 'mirror events should be persisted');
   assert(detail.summaries.length >= 1, 'summaries should be persisted');
 
   const list = await call(handleSpaceApi, 'GET', `/api/spaces/explorations/${created.space.id}`);

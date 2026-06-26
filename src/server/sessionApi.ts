@@ -71,9 +71,6 @@ async function persistStructuredState(params: { sessionId: string; sharedState: 
   const history = asArray(shared.journeyHistory);
   const currentQuestion = asRecord(shared.currentQuestion);
   const abAnswers = asRecord(shared.abAnswers);
-  const mirrorEvent = asRecord(shared.mirrorEvent);
-  const currentEvent = asRecord(shared.currentEvent);
-  const events = asArray(shared.events);
   const summary = asRecord(shared.summary);
 
   // 预构建批量插入数据，避免在事务中串行 await
@@ -116,36 +113,16 @@ async function persistStructuredState(params: { sessionId: string; sharedState: 
     });
   }
 
-  const mirrorSource = currentEvent ?? asRecord(events[events.length - 1]);
-  const hasMirror = mirrorEvent && (mirrorEvent.completed || mirrorEvent.active || mirrorEvent.signal || mirrorSource);
   const hasSummary = summary && (asString(summary.resonance) || asArray(summary.discoveries).length > 0 || asArray(summary.events).length > 0);
 
   await prisma.$transaction(async (transaction) => {
     // 删除旧记录
     await transaction.abInteraction.deleteMany({ where: { explorationId } });
-    await transaction.mirrorEvent.deleteMany({ where: { explorationId } });
     await transaction.sessionSummary.deleteMany({ where: { explorationId } });
 
     // 批量插入 AB 互动记录（替代串行 create）
     if (abInteractionData.length > 0) {
       await transaction.abInteraction.createMany({ data: abInteractionData });
-    }
-
-    if (hasMirror) {
-      await transaction.mirrorEvent.create({
-        data: {
-          sessionId: params.sessionId,
-          spaceId,
-          explorationId,
-          eventKey: asString(mirrorSource?.id) || asString(mirrorSource?.type) || null,
-          title: asString(mirrorSource?.title) || 'Mirror Event',
-          prompt: asString(mirrorSource?.prompt) || asString(mirrorSource?.description) || 'Mirror prompt',
-          hostChoice: asString(mirrorEvent.decision) || null,
-          hostReflection: asString(mirrorEvent.memorySeed) || null,
-          result: toJsonValue({ mirrorEvent, currentEvent: mirrorSource }),
-          completedAt: mirrorEvent.completed ? new Date() : null,
-        },
-      });
     }
 
     if (hasSummary) {

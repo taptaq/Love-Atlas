@@ -3,29 +3,11 @@ import { GrowthCurve } from '../../components/ui/GrowthCurve';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { RelationshipHealth } from '../../components/ui/RelationshipHealth';
 import { TermTooltip } from '../../components/ui/TermTooltip';
+import { TerrainMap } from '../../components/ui/TerrainMap';
 import { discoveryPool } from '../../features/discovery/discoveryPool';
 import { mapAreaConfig } from '../../features/map/map.config';
 import { useDiscoveryStore, useJourneyStore, useUiStore } from '../../store';
 import type { MapArea } from '../../types';
-
-const areaOrder: MapArea[] = ['forest', 'coast', 'valley', 'city', 'garden'];
-
-const stateLabel = {
-  cn: {
-    growth: '正在生长',
-    blur: '仍有模糊',
-    bright: '变得明亮',
-    fluctuate: '正在波动',
-    unexplored: '尚未探索',
-  },
-  en: {
-    growth: 'Growing',
-    blur: 'Still blurry',
-    bright: 'Brightening',
-    fluctuate: 'Fluctuating',
-    unexplored: 'Unexplored',
-  },
-};
 
 export function WorldPage() {
   const language = useUiStore((state) => state.language);
@@ -83,29 +65,19 @@ export function WorldPage() {
 
       <RelationshipHealth language={language} />
 
-      <section className="world-map-grid">
-        {areaOrder.map((area) => {
-          const config = mapAreaConfig[area];
-          const progress = Math.max(worldState.regionProgress[area], stats.regionCounts[area] ? Math.min(100, stats.regionCounts[area] * 18) : 0);
-          const regionState = worldState.regionStates[area];
-          const isActive = worldState.currentRegion === area;
-          return (
-            <article className={`world-area-card ${isActive ? 'active' : ''}`} key={area}>
-              <div className="world-area-head">
-                <span>{config.icon}</span>
-                <div>
-                  <h2>{config.label[language]}</h2>
-                  <p>{config.description[language]}</p>
-                </div>
-              </div>
-              <div className="world-area-progress"><span style={{ width: `${progress}%` }} /></div>
-              <div className="world-area-meta">
-                <span>{stateLabel[language][regionState]}</span>
-                <span>{progress}%</span>
-              </div>
-            </article>
-          );
-        })}
+      <section className="terrain-map-section" aria-label={language === 'cn' ? '对话地形图' : 'Conversation Terrain Map'}>
+        <div className="terrain-map-header">
+          <span className="eyebrow">{language === 'cn' ? '对话地形图' : 'Conversation Terrain'}</span>
+          <p>{language === 'cn' ? '节点大小是对话密度，颜色是共鸣状态，曲线是你们走过的对话河流。' : 'Node size = conversation density, color = resonance state, curves = your conversation rivers.'}</p>
+        </div>
+        <TerrainMap
+          language={language}
+          regionProgress={worldState.regionProgress}
+          regionStates={worldState.regionStates}
+          currentRegion={worldState.currentRegion}
+          visitedRegions={worldState.visitedRegions}
+          regionCounts={stats.regionCounts}
+        />
       </section>
 
       <section className="summary-grid">
@@ -134,7 +106,7 @@ export function WorldPage() {
               ))}
             </div>
           ) : (
-            <p>{language === 'cn' ? 'Mirror 等关系事件触发后会记录在这里。' : 'Mirror and other relationship events will be recorded here.'}</p>
+            <p>{language === 'cn' ? '关系事件触发后会记录在这里。' : 'Relationship events will be recorded here.'}</p>
           )}
         </article>
       </section>

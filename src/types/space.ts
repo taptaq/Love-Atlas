@@ -61,20 +61,6 @@ export type StructuredAbInteraction = {
   completed_at: string | null;
 };
 
-export type StructuredMirrorEvent = {
-  id: string;
-  event_key: string | null;
-  title: string;
-  prompt: string;
-  host_choice: string | null;
-  partner_choice: string | null;
-  host_reflection: string | null;
-  partner_reflection: string | null;
-  result: unknown;
-  created_at: string;
-  completed_at: string | null;
-};
-
 export type StructuredSessionSummary = {
   id: string;
   summary_text: string;
@@ -87,7 +73,6 @@ export type StructuredSessionSummary = {
 export type ExplorationDetailResult = {
   exploration: ExplorationSession | null;
   abInteractions: StructuredAbInteraction[];
-  mirrorEvents: StructuredMirrorEvent[];
   summaries: StructuredSessionSummary[];
 };
 

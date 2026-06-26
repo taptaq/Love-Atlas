@@ -1,4 +1,4 @@
-import type { JourneyGoal, JourneyHistoryItem, JourneyQuestion, JourneyRoute, MapArea, PresentMomentState, RelationshipEvent, RelationshipStage } from '../../types';
+import type { JourneyGoal, JourneyHistoryItem, JourneyQuestion, JourneyRoute, MapArea, MoodTag, PresentMomentState, RelationshipEvent, RelationshipStage } from '../../types';
 import type { ABInsights } from '../../types';
 
 async function postJson<T>(url: string, body: unknown) {
@@ -13,10 +13,6 @@ async function postJson<T>(url: string, body: unknown) {
 
 export interface AiInsightsResult {
   insights: ABInsights;
-  mirrorSignal: {
-    trigger: boolean;
-    nextMemorySeed: string;
-  };
 }
 
 export function generateAiInsights(params: {
@@ -30,20 +26,6 @@ export function generateAiInsights(params: {
   hasMoment: boolean;
 }) {
   return postJson<AiInsightsResult>('/api/ai/insights', params);
-}
-
-export interface AiReminderResult {
-  title: { cn: string; en: string };
-  body: { cn: string; en: string };
-}
-
-export function generateAiReminder(params: {
-  days: number;
-  stage: RelationshipStage | null;
-  lastGoal: JourneyGoal | null;
-  history: string[];
-}) {
-  return postJson<AiReminderResult>('/api/ai/reminder', params);
 }
 
 export interface AiMomentInfluence {
@@ -94,6 +76,28 @@ export function generateAiTheme(params: {
   return postJson<AiThemeResult>('/api/ai/theme', params);
 }
 
+// 动态深度上下文：传给 AI 用于实时判断下一题深度
+export interface DynamicDepthContext {
+  questionsAsked: number;
+  // 历史每题的相似度和简短问答摘要
+  historySummary: Array<{
+    question: string;
+    answerA: string;
+    answerB: string;
+    similarity: number;
+  }>;
+  // 相似度趋势
+  avgSimilarity: number;
+  recentSimilarityTrend: 'rising' | 'falling' | 'stable';
+  // 是否刚结束深度对话
+  hadDeepDialogue: boolean;
+  deepDialogueDepth: number;
+  // 连续低共鸣题数（差异大）
+  consecutiveLowResonance: number;
+  // 连续高共鸣题数
+  consecutiveHighResonance: number;
+}
+
 export function generateAiQuestion(params: {
   stage: RelationshipStage | null;
   goal: JourneyGoal | null;
@@ -103,7 +107,12 @@ export function generateAiQuestion(params: {
   currentQuestionIndex: number;
   moment: PresentMomentState;
   history: string[];
+  dynamicDepth?: DynamicDepthContext;
   worldProgress?: Record<string, number>;
+  // 情绪签到：仅第一题传入，影响问题方向和温度
+  mood?: MoodTag | null;
+  // 跨探索记忆：仅第一题传入，避免重复并基于之前发现继续
+  memory?: string;
 }) {
   return postJson<JourneyQuestion>('/api/ai/question', params);
 }
@@ -156,6 +165,8 @@ export function generateAiFollowup(params: {
   prevInsights: ABInsights | null;
   stage: RelationshipStage | null;
   goal: JourneyGoal | null;
+  // 触发类型：低共鸣探索差异，高共鸣深化连接
+  trigger?: 'low_resonance' | 'high_resonance';
 }) {
   return postJson<AiFollowupResult>('/api/ai/followup', params);
 }

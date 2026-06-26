@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { AuthButton } from '../components/auth/AuthButton';
 import { LanguageToggle } from '../components/ui/LanguageToggle';
+import { DiscoveryUnlockToast } from '../components/ui/DiscoveryUnlockToast';
 import { SyncStatusIndicator } from '../components/ui/SyncStatusIndicator';
 import { ThemeToggle } from '../components/ui/ThemeToggle';
 import { useAuthStore } from '../features/auth/useAuthStore';
@@ -10,7 +11,6 @@ import { useSpacePresenceMonitor } from '../features/session/useSpacePresenceMon
 import { ErrorBoundary } from '../components/layout/ErrorBoundary';
 import { StarBackground } from '../components/layout/StarBackground';
 import { DiscoveryAtlasPage } from '../pages/DiscoveryAtlasPage/DiscoveryAtlasPage';
-import { EventPage } from '../pages/EventPage/EventPage';
 import { ExplorationHistoryPage } from '../pages/ExplorationHistoryPage/ExplorationHistoryPage';
 import { GoalPage } from '../pages/GoalPage/GoalPage';
 import { HomePage } from '../pages/HomePage/HomePage';
@@ -33,8 +33,6 @@ function renderPage(step: ReturnType<typeof useJourneyStore.getState>['currentSt
       return <RoutePage />;
     case 'journey':
       return <JourneyPage />;
-    case 'event':
-      return <EventPage />;
     case 'summary':
       return <SummaryPage />;
     case 'world':
@@ -73,14 +71,12 @@ export function App() {
       goal: { cn: '探索目标 · Love Atlas', en: 'Goal · Love Atlas' },
       route: { cn: '地图路线 · Love Atlas', en: 'Route · Love Atlas' },
       journey: { cn: '探索旅程 · Love Atlas', en: 'Journey · Love Atlas' },
-      event: { cn: '镜像时刻 · Love Atlas', en: 'Mirror Event · Love Atlas' },
       summary: { cn: '探索总结 · Love Atlas', en: 'Summary · Love Atlas' },
       world: { cn: '关系世界 · Love Atlas', en: 'World · Love Atlas' },
       discoveryAtlas: { cn: '发现图鉴 · Love Atlas', en: 'Discovery Atlas · Love Atlas' },
       explorationHistory: { cn: '历史探索 · Love Atlas', en: 'Exploration History · Love Atlas' },
       spaceManagement: { cn: '空间管理 · Love Atlas', en: 'Space Management · Love Atlas' },
       spaceLibrary: { cn: '沉淀库 · Love Atlas', en: 'Space Library · Love Atlas' },
-      mirrorEngine: { cn: '镜像引擎 · Love Atlas', en: 'Mirror Engine · Love Atlas' },
     };
     const title = titles[currentStep] ?? titles.home;
     document.title = cn ? title.cn : title.en;
@@ -99,6 +95,7 @@ export function App() {
       <main id="main-content">
         <ErrorBoundary>{renderPage(currentStep, memberCount)}</ErrorBoundary>
       </main>
+      <DiscoveryUnlockToast />
     </div>
   );
 }

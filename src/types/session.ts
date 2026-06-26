@@ -8,17 +8,14 @@ export type RelationshipSharedState = Pick<
   | 'relationshipStage'
   | 'goal'
   | 'route'
-  | 'mirrorEvent'
   | 'presentMoment'
   | 'abAnswers'
   | 'worldState'
   | 'summary'
   | 'currentQuestionIndex'
   | 'currentQuestion'
-  | 'journeyLength'
   | 'journeyHistory'
   | 'events'
-  | 'currentEvent'
 > & {
   abInteraction: JourneyStoreState['abAnswers'];
   mapState: JourneyStoreState['worldState'];

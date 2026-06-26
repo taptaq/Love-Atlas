@@ -117,7 +117,6 @@ function checkCondition(discovery: DiscoveryItem, context: DiscoveryUnlockContex
   }
 
   if (cond.firstMomentUpload && !context.journey?.firstMomentUpload) return false;
-  if (cond.mirrorCount && ((stats.eventCounts.mirror ?? 0) + (context.event === 'mirror' ? 1 : 0)) < cond.mirrorCount) return false;
   if (cond.coastCount && ((stats.regionCounts.coast ?? 0) + (context.region === 'coast' ? 1 : 0)) < cond.coastCount) return false;
   if (cond.nightExplore) {
     const hour = new Date().getHours();
