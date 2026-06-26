@@ -1,16 +1,16 @@
 import { Readable } from 'node:stream';
 import type { Handler } from '@netlify/functions';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { loadServerEnv } from '../../src/server/env';
+import { handleAiRouteApi } from '../../src/server/aiRouteService';
+import { handleAiVisionApi } from '../../src/server/aiVisionService';
+import { handleAiJourneyApi } from '../../src/server/aiJourneyService';
+import { handleSpaceApi } from '../../src/server/spaceApi';
+import { handleSessionApi } from '../../src/server/sessionApi';
 
 // 加载 .env（本地开发用；Netlify 生产环境变量已注入，无 .env 时自动跳过）
-const { loadServerEnv } = await import('../../src/server/env');
+// 放在模块顶层执行，避免 top-level await
 loadServerEnv();
-
-const { handleAiRouteApi } = await import('../../src/server/aiRouteService');
-const { handleAiVisionApi } = await import('../../src/server/aiVisionService');
-const { handleAiJourneyApi } = await import('../../src/server/aiJourneyService');
-const { handleSpaceApi } = await import('../../src/server/spaceApi');
-const { handleSessionApi } = await import('../../src/server/sessionApi');
 
 interface FakeResponseState {
   statusCode: number;
@@ -23,8 +23,10 @@ function createFakeRequest(event: Parameters<Handler>[0]): IncomingMessage {
   const stream = Readable.from([raw]);
   const req = Object.create(stream) as IncomingMessage;
 
+  const rawUrl = event.rawUrl ?? event.path ?? '';
+  const [pathname, search] = rawUrl.split('?');
   req.method = event.httpMethod;
-  req.url = event.rawUrl ? new URL(event.rawUrl).pathname + (event.rawUrl.split('?')[1] ? `?${event.rawUrl.split('?')[1]}` : '') : event.path;
+  req.url = pathname + (search ? `?${search}` : '');
   req.headers = {
     host: event.headers.host ?? 'localhost',
     'content-type': event.headers['content-type'] ?? 'application/json',
