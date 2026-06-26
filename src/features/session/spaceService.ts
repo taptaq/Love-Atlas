@@ -1,5 +1,5 @@
 import type { RelationshipSharedState } from '../../types/session';
-import type { ExplorationDetailResult, ExplorationListResult, ExplorationStateResult, SpaceApiResult, SpaceLibraryResult, SpaceManagementResult, UnbindSpaceResult } from '../../types/space';
+import type { ExplorationDetailResult, ExplorationListResult, ExplorationStateResult, MyPersistentSpaceResult, SpaceApiResult, SpaceLibraryResult, SpaceManagementResult, UnbindSpaceResult } from '../../types/space';
 import { requestAuthPopover } from '../../components/auth/AuthButton';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../auth/useAuthStore';
@@ -71,6 +71,11 @@ export async function createTemporarySpace(sharedState: RelationshipSharedState)
 export async function createPersistentSpace(sharedState: RelationshipSharedState, userId: string) {
   const participantId = createParticipantId();
   return postJson<SpaceApiResult>('/api/spaces/create-persistent', { participantId, userId, sharedState });
+}
+
+// 查询当前用户已有的活跃专属关系空间，存在则返回，避免重复创建报错
+export async function findMyPersistentSpace() {
+  return getJson<MyPersistentSpaceResult>('/api/spaces/my-persistent');
 }
 
 export async function upgradeTemporarySpace(spaceId: string, userId: string) {

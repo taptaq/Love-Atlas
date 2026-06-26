@@ -1,23 +1,23 @@
 import { useEffect, useState } from 'react';
 import { requestAuthPopover } from '../../components/auth/AuthButton';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { DailyQuestion } from '../../components/ui/DailyQuestion';
+// import { DailyQuestion } from '../../components/ui/DailyQuestion'; // 今日一问：暂时下线
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { SpaceOnboarding } from '../../components/ui/SpaceOnboarding';
 import { TermTooltip } from '../../components/ui/TermTooltip';
 import { WeeklyBlindBox } from '../../components/ui/WeeklyBlindBox';
 import { friendlyError } from '../../utils/friendlyError';
-import type { WeeklyTheme } from '../../services/weeklyBlindBoxService';
+// import type { WeeklyTheme } from '../../services/weeklyBlindBoxService'; // 盲盒开始按钮已移除
 import { getDiscoveryCopy } from '../../features/discovery/discoveryI18n';
 import { useAuthStore } from '../../features/auth/useAuthStore';
-import { createPersistentExploration, createPersistentSpace, createTemporarySpace, joinRelationshipSpace, leaveSpace, loadExplorationSharedState, listSpaceExplorations, unbindPersistentSpace, upgradeTemporarySpace } from '../../features/session/spaceService';
+import { createPersistentExploration, createPersistentSpace, createTemporarySpace, findMyPersistentSpace, joinRelationshipSpace, leaveSpace, loadExplorationSharedState, listSpaceExplorations, unbindPersistentSpace, upgradeTemporarySpace } from '../../features/session/spaceService';
 import { useSessionStore } from '../../features/session/useSessionStore';
 import { useSpaceStore } from '../../features/session/useSpaceStore';
 import { selectRelationshipSharedState } from '../../features/session/useRelationshipSessionSync';
 import { t } from '../../i18n';
 import { useDiscoveryStore, useJourneyStore, useUiStore } from '../../store';
 import type { ExplorationSession, SpaceApiResult } from '../../types/space';
-import type { JourneyQuestion } from '../../types';
+// import type { JourneyQuestion } from '../../types'; // 今日一问：暂时下线
 
 export function HomePage({ memberCount }: { memberCount: number }) {
   const language = useUiStore((state) => state.language);
@@ -119,6 +119,12 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       setSpaceAction('creating');
       setSpaceConnecting();
       setSessionConnecting();
+      // 若已有专属永久空间，直接进入，避免重复创建报错
+      const existing = await findMyPersistentSpace();
+      if (existing.space && existing.exploration && existing.session && existing.role) {
+        enterSpace({ space: existing.space, exploration: existing.exploration, session: existing.session, role: existing.role }, false);
+        return;
+      }
       const result = await createPersistentSpace(selectRelationshipSharedState(useJourneyStore.getState()), authUser.id);
       enterSpace(result);
     } catch (error) {
@@ -161,6 +167,12 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       setSpaceAction('creating');
       setSpaceConnecting();
       setSessionConnecting();
+      // 若已有专属永久空间，直接进入（虚拟伴侣模式），避免重复创建报错
+      const existing = await findMyPersistentSpace();
+      if (existing.space && existing.exploration && existing.session && existing.role) {
+        enterSpace({ space: existing.space, exploration: existing.exploration, session: existing.session, role: existing.role }, true);
+        return;
+      }
       const result = await createPersistentSpace(selectRelationshipSharedState(useJourneyStore.getState()), authUser.id);
       enterSpace(result, true);
     } catch (error) {
@@ -208,7 +220,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       setSpaceConnecting();
       setSessionConnecting();
       const result = await createPersistentExploration(space.id, selectRelationshipSharedState(useJourneyStore.getState()), authUser.id);
-      enterSpace(result);
+      enterSpace(result, isCompanion);
       goToStep('setup');
     } catch (error) {
       const message = friendlyError(error, language);
@@ -293,38 +305,22 @@ export function HomePage({ memberCount }: { memberCount: number }) {
     goToStep('summary');
   };
 
-  const handleStartBlindBoxTheme = (theme: WeeklyTheme) => {
-    const store = useJourneyStore.getState();
-    store.setRelationshipStage(theme.stage);
-    store.setGoal(theme.goal);
-    store.applyPresentMoment({ text: theme.momentText[language] });
-    if (hasSpace && (partnerJoined || isCompanion)) {
-      goToStep('setup');
-    } else if (hasSpace && !partnerJoined && !isCompanion) {
-      setSpaceError(cn ? '主题已准备好，请等待对方加入空间后再开启探索。' : 'Theme is ready. Please wait for your partner to join before starting.');
-    } else {
-      void handleCreateTemporarySpace().then(() => {
-        goToStep('setup');
-      });
-    }
-  };
-
-  // 今日一问：跳过 setup/goal/route，直接用预设问题进入旅程
-  const handleStartDailyQuestion = (question: JourneyQuestion) => {
-    const store = useJourneyStore.getState();
-    if (hasSpace && (partnerJoined || isCompanion)) {
-      store.startJourneyWithDailyQuestion(question);
-      return;
-    }
-    if (hasSpace && !partnerJoined && !isCompanion) {
-      setSpaceError(cn ? '问题已准备好，请等待对方加入空间后再开启探索。' : 'Question is ready. Please wait for your partner to join before starting.');
-      return;
-    }
-    // 没有空间：先创建临时空间，再开始
-    void handleCreateTemporarySpace().then(() => {
-      useJourneyStore.getState().startJourneyWithDailyQuestion(question);
-    });
-  };
+  // 今日一问：跳过 setup/goal/route，直接用预设问题进入旅程（暂时下线）
+  // const handleStartDailyQuestion = (question: JourneyQuestion) => {
+  //   const store = useJourneyStore.getState();
+  //   if (hasSpace && (partnerJoined || isCompanion)) {
+  //     store.startJourneyWithDailyQuestion(question);
+  //     return;
+  //   }
+  //   if (hasSpace && !partnerJoined && !isCompanion) {
+  //     setSpaceError(cn ? '问题已准备好，请等待对方加入空间后再开启探索。' : 'Question is ready. Please wait for your partner to join before starting.');
+  //     return;
+  //   }
+  //   // 没有空间：先创建临时空间，再开始
+  //   void handleCreateTemporarySpace().then(() => {
+  //     useJourneyStore.getState().startJourneyWithDailyQuestion(question);
+  //   });
+  // };
 
   return (
     <main className="page home-page space-home-page">
@@ -369,9 +365,10 @@ export function HomePage({ memberCount }: { memberCount: number }) {
         </p>
       </section>
 
-      <WeeklyBlindBox onStart={handleStartBlindBoxTheme} />
+      {hasSpace && <WeeklyBlindBox />}
 
-      <DailyQuestion onStart={handleStartDailyQuestion} />
+      {/* 今日一问：暂时下线 */}
+      {/* <DailyQuestion onStart={handleStartDailyQuestion} /> */}
 
       <section className={hasSpace ? 'space-entry-layout' : 'space-entry-layout space-entry-layout-single'}>
         <article className="space-primary-card">

@@ -42,9 +42,11 @@ export function AuthButton() {
 
   useEffect(() => {
     if (!open) {
+      // 关闭弹窗时清空所有表单值，避免回显到其他表单
       setLocalError('');
       setInfo('');
       setNeedsEmailVerification(false);
+      setEmail('');
       setPassword('');
       setConfirmPassword('');
       return;

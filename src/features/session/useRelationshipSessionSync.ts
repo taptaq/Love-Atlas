@@ -48,6 +48,10 @@ function serializeState(state: RelationshipSharedState | null | undefined): stri
 function handleSyncError(error: unknown) {
   const message = error instanceof Error ? error.message : '';
   if (!/Exploration not found|Space not found|Only active space members/i.test(message)) return false;
+  // 如果本地已经没有 session/space，说明用户已离开，静默处理不再重复清理
+  const hasSession = Boolean(useSessionStore.getState().session?.id);
+  const hasSpace = Boolean(useSpaceStore.getState().space?.id);
+  if (!hasSession && !hasSpace) return true;
   useSpaceStore.getState().clearSpace();
   useSessionStore.getState().clearSession();
   useJourneyStore.getState().resetJourney();

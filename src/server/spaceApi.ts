@@ -320,6 +320,37 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
       return true;
     }
 
+    // 查询当前用户已有的活跃专属关系空间，存在则直接返回，避免重复创建报错
+    if (request.method === 'GET' && request.url.startsWith('/api/spaces/my-persistent')) {
+      const userId = requireUserId(authUser, undefined);
+      const member = await prisma.relationshipSpaceMember.findFirst({
+        where: { userId, spaceType: 'persistent', status: 'active' },
+        orderBy: { joinedAt: 'desc' },
+      });
+      if (!member) {
+        sendJson(response, 200, { space: null });
+        return true;
+      }
+      const [space, latestExploration] = await Promise.all([
+        prisma.relationshipSpace.findUnique({ where: { id: member.spaceId } }),
+        prisma.explorationSession.findFirst({ where: { spaceId: member.spaceId }, orderBy: { createdAt: 'desc' } }),
+      ]);
+      if (!space || space.status === 'unbound' || space.status === 'archived') {
+        sendJson(response, 200, { space: null });
+        return true;
+      }
+      const legacySession = latestExploration?.legacySessionId
+        ? await prisma.session.findUnique({ where: { id: latestExploration.legacySessionId } })
+        : null;
+      sendJson(response, 200, {
+        space: normalizeSpace(space),
+        exploration: latestExploration ? normalizeExploration(latestExploration) : null,
+        session: legacySession ? normalizeLegacySession(legacySession) : null,
+        role: member.role,
+      });
+      return true;
+    }
+
     if (request.method === 'POST' && request.url === '/api/spaces/create-persistent') {
       const userId = requireUserId(authUser, String(body.userId ?? '') || undefined);
       const participantId = String(body.participantId ?? '') || undefined;

@@ -11,11 +11,7 @@ import {
   type WeeklyTheme,
 } from '../../services/weeklyBlindBoxService';
 
-interface WeeklyBlindBoxProps {
-  onStart: (theme: WeeklyTheme) => void;
-}
-
-export function WeeklyBlindBox({ onStart }: WeeklyBlindBoxProps) {
+export function WeeklyBlindBox() {
   const language = useUiStore((state) => state.language);
   const cn = language === 'cn';
   const { weekKey, isOpened, isDismissed } = getBlindBoxStatus();
@@ -90,10 +86,6 @@ export function WeeklyBlindBox({ onStart }: WeeklyBlindBoxProps) {
     markBlindBoxDismissed(weekKey);
   };
 
-  const handleStart = () => {
-    if (theme) onStart(theme);
-  };
-
   // 加载中状态
   if (loading || !theme) {
     return (
@@ -134,7 +126,7 @@ export function WeeklyBlindBox({ onStart }: WeeklyBlindBoxProps) {
         <header className="blind-box-header">
           <span className="blind-box-icon" aria-hidden="true">{theme.icon}</span>
           <div>
-            <span className="blind-box-eyebrow">{cn ? '本周主题' : 'This Week’s Theme'}</span>
+            <span className="blind-box-eyebrow">{cn ? '本周盲盒主题 · 仅供参考' : 'This Week’s Blind Box · for reference'}</span>
             <h3 className="blind-box-title">{theme.title[language]}</h3>
           </div>
           <button
@@ -150,14 +142,6 @@ export function WeeklyBlindBox({ onStart }: WeeklyBlindBoxProps) {
         {theme.generatedBy === 'ai' && (
           <small className="blind-box-source">{cn ? '✨ 由 AI 根据你们的关系状态生成' : '✨ Crafted by AI based on your relationship'}</small>
         )}
-        <div className="blind-box-actions">
-          <button type="button" className="blind-box-start-btn" onClick={handleStart}>
-            {cn ? '用这个主题开始探索' : 'Start with this theme'}
-          </button>
-          <button type="button" className="blind-box-dismiss-btn" onClick={handleDismiss}>
-            {cn ? '下次再说' : 'Maybe later'}
-          </button>
-        </div>
       </article>
     </section>
   );

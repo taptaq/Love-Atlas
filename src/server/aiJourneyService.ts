@@ -461,8 +461,8 @@ async function generateTheme(body: ApiBody) {
   return {
     icon,
     title: {
-      cn: asString(title.cn, '本周主题'),
-      en: asString(title.en, 'This Week\'s Theme'),
+      cn: asString(title.cn, '本周盲盒主题（仅供参考）'),
+      en: asString(title.en, "This Week's Blind Box Theme (for reference only)"),
     },
     description: {
       cn: asString(description.cn, '一份为你准备的探索主题，点开看看。'),

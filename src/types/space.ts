@@ -132,3 +132,10 @@ export type CreateSpacePayload = {
   sharedState: RelationshipSharedState;
   userId?: string;
 };
+
+export type MyPersistentSpaceResult = {
+  space: RelationshipSpace | null;
+  exploration?: ExplorationSession | null;
+  session?: RelationshipSession | null;
+  role?: Exclude<SpaceRole, null>;
+};
