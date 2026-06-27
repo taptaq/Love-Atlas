@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ExplorationFeedback } from '../../components/ui/ExplorationFeedback';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { discoveryPool } from '../../features/discovery/discoveryPool';
 import { getDiscoveryCopy } from '../../features/discovery/discoveryI18n';
 import { mapAreaConfig } from '../../features/map/map.config';
 import { useDiscoveryStore, useJourneyStore, useUiStore } from '../../store';
+import { loadConversationMemory } from '../../services/conversationMemoryService';
 
 export function SummaryPage() {
   const language = useUiStore((state) => state.language);
@@ -21,6 +22,25 @@ export function SummaryPage() {
     .map((id) => discoveryPool.find((item) => item.id === id))
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
+  // 关系成长对比：基于跨探索记忆，展示"这次 vs 上次"的深度变化
+  const growthInsight = useMemo(() => {
+    const memory = loadConversationMemory();
+    const entries = memory.entries;
+    if (entries.length === 0) {
+      return { isFirst: true, count: 0, currentAvg: 0, prevAvg: 0, trend: 'first' as const, delta: 0 };
+    }
+    // 本次探索的相似度（从历史问答计算）
+    const currentSims = history.map((item) => item.answers.similarity).filter((s) => s > 0);
+    const currentAvg = currentSims.length > 0
+      ? Math.round(currentSims.reduce((a, b) => a + b, 0) / currentSims.length)
+      : 0;
+    const prevEntry = entries[entries.length - 1];
+    const prevAvg = prevEntry?.avgSimilarity ?? 0;
+    const delta = currentAvg - prevAvg;
+    const trend: 'rising' | 'falling' | 'stable' = delta > 5 ? 'rising' : delta < -5 ? 'falling' : 'stable';
+    return { isFirst: false, count: entries.length, currentAvg, prevAvg, trend, delta };
+  }, [history]);
+
   useEffect(() => {
     setIsLoading(true);
     Promise.resolve(refreshDiscoveries()).finally(() => setIsLoading(false));
@@ -34,6 +54,41 @@ export function SummaryPage() {
         <h1>{language === 'cn' ? '这次旅程留下了新的痕迹' : 'This journey left new traces'}</h1>
         <p>{summary.resonance || (language === 'cn' ? '你们完成了一次完整探索。' : 'You completed a full exploration.')}</p>
         {summary.generatedBy === 'ai' && <small>{language === 'cn' ? 'AI 已根据本次问答生成关系洞察' : 'AI generated relationship insight from this journey'}</small>}
+      </section>
+
+      {/* 关系成长对比：让用户感知"这次比上次聊得更深了" */}
+      <section className="growth-comparison-card reveal-fade-in">
+        <span className="eyebrow">{cn ? '🌱 关系成长轨迹' : '🌱 Relationship Growth'}</span>
+        {growthInsight.isFirst ? (
+          <div className="growth-first">
+            <h2>{cn ? '这是你们的第一次深度对话' : 'This is your first deep conversation'}</h2>
+            <p>{cn ? '每一次探索都会沉淀下来，慢慢你们会看到关系如何在这条河流里变深。' : 'Each exploration settles here. Over time you will see how your relationship deepens along this river.'}</p>
+          </div>
+        ) : (
+          <div className="growth-comparison">
+            <h2>{cn ? `第 ${growthInsight.count + 1} 次探索` : `Exploration #${growthInsight.count + 1}`}</h2>
+            <div className="growth-metrics">
+              <div className="growth-metric">
+                <small>{cn ? '上次平均共鸣' : 'Last avg resonance'}</small>
+                <strong>{growthInsight.prevAvg}%</strong>
+              </div>
+              <span className="growth-arrow">
+                {growthInsight.trend === 'rising' ? '↗' : growthInsight.trend === 'falling' ? '↘' : '→'}
+              </span>
+              <div className="growth-metric growth-metric-current">
+                <small>{cn ? '这次平均共鸣' : 'This avg resonance'}</small>
+                <strong>{growthInsight.currentAvg}%</strong>
+              </div>
+            </div>
+            <p className="growth-trend-hint">
+              {growthInsight.trend === 'rising'
+                ? (cn ? `共鸣度上升了 ${growthInsight.delta} 点，你们聊得越来越深了` : `Resonance rose ${growthInsight.delta} points — you are going deeper together`)
+                : growthInsight.trend === 'falling'
+                  ? (cn ? `共鸣度下降了 ${Math.abs(growthInsight.delta)} 点，这次看到了不同的角度，这也是理解的一部分` : `Resonance dipped ${Math.abs(growthInsight.delta)} points — different angles appeared, and that is part of understanding too`)
+                  : (cn ? '共鸣度保持稳定，你们在不同话题里维持着相似的默契' : 'Resonance held steady — a consistent rhythm across different topics')}
+            </p>
+          </div>
+        )}
       </section>
 
       <section className="summary-grid">

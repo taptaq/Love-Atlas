@@ -140,9 +140,9 @@ export function JourneyPage() {
       .finally(() => setCompanionThinking(false));
   }, [isCompanion, abAnswers.answerAReady, abAnswers.answerBReady, abAnswers.revealVisible, abAnswers.answerA, currentQuestion, currentQuestionIndex, relationshipStage, goal, language, cn, submitAnswerB, setAnswerBReady]);
 
-  // 揭晓后相似度低时获取 AI 情感教练建议（P2-2 + P2-3）
+  // 揭晓完成后相似度低时获取 AI 情感教练建议（P2-2 + P2-3）
   useEffect(() => {
-    if (!abAnswers.revealVisible || abAnswers.similarity >= SIMILARITY_THRESHOLD.MEDIUM) {
+    if (abAnswers.revealStage !== 'complete' || abAnswers.similarity >= SIMILARITY_THRESHOLD.MEDIUM) {
       setCoachAdvice(null);
       setCoachLoading(false);
       return;
@@ -176,7 +176,7 @@ export function JourneyPage() {
       }
     });
     return () => { cancelled = true; };
-  }, [abAnswers.revealVisible, abAnswers.similarity, abAnswers.answerA, abAnswers.answerB, currentQuestion]);
+  }, [abAnswers.revealStage, abAnswers.similarity, abAnswers.answerA, abAnswers.answerB, currentQuestion]);
 
   if (!currentQuestion) {
     return (
@@ -239,6 +239,31 @@ export function JourneyPage() {
         <h2>{currentQuestion.localized?.[language] ?? currentQuestion.question}</h2>
         <p>{currentQuestion.localizedHint?.[language] ?? currentQuestion.hint}</p>
         {currentQuestion.worldEffect && <small className="world-effect-chip">{currentQuestion.worldEffect.localizedMessage?.[language] ?? currentQuestion.worldEffect.message}</small>}
+        {/* 深度锚点：让用户感知"此刻正在发生深度对话" */}
+        <small className="depth-anchor-hint">
+          {(() => {
+            const isFirst = currentQuestionIndex === 0;
+            if (relationshipStage === 'long-term') {
+              return isFirst
+                ? (cn ? '🌿 这题触及你们习以为常但很少深聊的部分' : '🌿 This touches what you take for granted but rarely discuss')
+                : (cn ? '🌿 比日常聊天更深一层，试试诚实回答' : '🌿 Deeper than daily chat — try answering honestly');
+            }
+            if (relationshipStage === 'long-distance') {
+              return isFirst
+                ? (cn ? '🌙 这题关于距离里的感受，平时不太会聊到' : '🌙 About feelings across distance, rarely asked')
+                : (cn ? '🌙 聊聊距离里那些没说出口的部分' : '🌙 The unsaid parts of distance');
+            }
+            if (relationshipStage === 'dating') {
+              return isFirst
+                ? (cn ? '💫 这题比平时聊的稍深一点' : '💫 A little deeper than usual')
+                : (cn ? '💫 试试说出平时没机会说的想法' : '💫 Share what you usually don\'t get to say');
+            }
+            // new 阶段
+            return isFirst
+              ? (cn ? '🍃 轻松开始，先了解彼此的小世界' : '🍃 A light start, discovering each other\'s small worlds')
+              : (cn ? '🍃 慢慢来，这题没有标准答案' : '🍃 Take it easy, no right answer here');
+          })()}
+        </small>
       </section>
 
       <section className="ab-grid">
@@ -316,7 +341,7 @@ export function JourneyPage() {
         <div className="flow-actions">
           <p className="reveal-wait-hint">
             {bothReady
-              ? (cn ? '✨ 双方已完成，正在揭晓…' : '✨ Both done, revealing…')
+              ? (cn ? '✨ 你们都准备好了，一起揭晓这一刻…' : '✨ You are both ready, revealing this moment together…')
               : myReady && !partnerReady
                 ? (isCompanion
                     ? (cn ? '🤖 虚拟伴侣正在思考…' : '🤖 Companion is thinking…')
@@ -330,8 +355,39 @@ export function JourneyPage() {
         </div>
       )}
 
-      {abAnswers.revealVisible && abAnswers.insights && (
-        <section className="reveal-card">
+      {/* 揭晓仪式：期待期——双方ready后的仪式感停顿 */}
+      {abAnswers.revealStage === 'anticipating' && (
+        <section className="reveal-ritual-card reveal-anticipating" aria-live="polite">
+          <div className="reveal-ritual-icon">✨</div>
+          <h2>{cn ? '你们正在共同见证这一刻' : 'You are witnessing this moment together'}</h2>
+          <p>{cn ? '两个人的答案即将相遇…' : 'Your answers are about to meet…'}</p>
+        </section>
+      )}
+
+      {/* 揭晓阶段 3：先看到对方答案（不带评判） */}
+      {abAnswers.revealStage === 'revealing_answer' && (
+        <section className="reveal-ritual-card reveal-answer-stage" aria-live="polite">
+          <span className="eyebrow">{cn ? '对方写下了' : 'Your partner wrote'}</span>
+          <p className="reveal-partner-words">{isPartner ? abAnswers.answerA : abAnswers.answerB}</p>
+          <small className="reveal-focus-hint">{cn ? '先看一看对方的真实想法' : 'Take a moment to see their real thoughts'}</small>
+        </section>
+      )}
+
+      {/* 揭晓阶段 4：渐入相似度 */}
+      {abAnswers.revealStage === 'revealing_similarity' && (
+        <section className="reveal-card reveal-similarity-stage reveal-fade-in" aria-live="polite">
+          <span className="eyebrow">{cn ? '你们之间的信号' : 'A signal between you'}</span>
+          <h2>{cn ? '你们之间出现了新的共鸣' : 'A new resonance appeared between you'}</h2>
+          <div className="similarity-meter">
+            <span style={{ width: `${abAnswers.similarity}%` }} />
+          </div>
+          <p><strong>{cn ? '相似度' : 'Similarity'}：</strong>{abAnswers.similarity}% · {abAnswers.intensity}</p>
+        </section>
+      )}
+
+      {/* 揭晓阶段 5：完整洞察（complete 阶段） */}
+      {abAnswers.revealStage === 'complete' && abAnswers.insights && (
+        <section className="reveal-card reveal-fade-in">
           <span className="eyebrow">{cn ? '洞察' : 'Insight'}</span>
           <h2>{cn ? '你们之间出现了新的信号' : 'A new signal appeared between you'}</h2>
           <div className="similarity-meter">
@@ -341,27 +397,36 @@ export function JourneyPage() {
           <p><strong>{cn ? '共鸣' : 'Resonance'}：</strong>{abAnswers.insights.resonance}</p>
           <p><strong>{cn ? '差异' : 'Difference'}：</strong>{abAnswers.insights.difference}</p>
           <p><strong>{cn ? '建议' : 'Suggestion'}：</strong>{abAnswers.insights.suggestion}</p>
+          <small className="depth-summary-hint">
+            {(() => {
+              const sim = abAnswers.similarity;
+              if (sim >= 70) return cn ? '✨ 这次你们触及了深层共鸣，比日常聊天更深' : '✨ You touched deep resonance, deeper than daily chat';
+              if (sim >= 30) return cn ? '💫 这次你们从不同角度回应，看见了彼此的真实' : '💫 You answered from different angles, seeing each other\'s real thoughts';
+              return cn ? '🌿 这次你们看见了差异，差异也是理解的开始' : '🌿 You saw difference, and difference is where understanding begins';
+            })()}
+          </small>
         </section>
       )}
 
-      {abAnswers.revealVisible && (
-        <section className="world-update-card">
+      {/* 世界更新：延迟淡入，避免争夺揭晓专注时刻 */}
+      {abAnswers.revealStage === 'complete' && (
+        <section className="world-update-card reveal-delayed-fade-in">
           <span className="eyebrow">{cn ? '世界更新' : 'World Update'}</span>
           <h2>{area.icon} {area.label[language]} · {worldState.regionProgress[currentQuestion.region]}%</h2>
           <p>{abAnswers.insights?.emotion}</p>
         </section>
       )}
 
-      {abAnswers.revealVisible && coachLoading && (
-        <section className="coach-card coach-loading-card" aria-live="polite">
+      {abAnswers.revealStage === 'complete' && coachLoading && (
+        <section className="coach-card coach-loading-card reveal-delayed-fade-in" aria-live="polite">
           <span className="eyebrow">{cn ? 'AI 沟通教练' : 'AI Communication Coach'}</span>
           <h2>{cn ? '正在为你们生成沟通建议…' : 'Generating communication advice…'}</h2>
           <p className="coach-buffer">{cn ? '不同是理解的开始，稍等片刻。' : 'Difference is a doorway. One moment.'}</p>
         </section>
       )}
 
-      {abAnswers.revealVisible && !coachLoading && coachAdvice && (
-        <section className="coach-card">
+      {abAnswers.revealStage === 'complete' && !coachLoading && coachAdvice && (
+        <section className="coach-card reveal-delayed-fade-in">
           <span className="eyebrow">{cn ? 'AI 沟通教练' : 'AI Communication Coach'}</span>
           <h2>{cn ? '你们的答案各有角度，这很自然' : 'Your answers come from different angles, and that is natural'}</h2>
           <p className="coach-buffer">{cn ? coachAdvice.buffer.cn : coachAdvice.buffer.en}</p>
@@ -370,8 +435,8 @@ export function JourneyPage() {
       )}
 
       {/* 深度对话总结 */}
-      {abAnswers.revealVisible && dialogueSummary && (
-        <section className="dialogue-summary-card">
+      {abAnswers.revealStage === 'complete' && dialogueSummary && (
+        <section className="dialogue-summary-card reveal-delayed-fade-in">
           <span className="eyebrow">{cn ? '🔗 深度对话总结' : '🔗 Deep Dialogue Summary'}</span>
           <div className="dialogue-chain-bar">
             <span className={dialogueSummary.completedDepth >= 1 ? 'chain-dot active' : 'chain-dot'} />
@@ -389,8 +454,8 @@ export function JourneyPage() {
       )}
 
       {/* 深度对话生成总结 loading */}
-      {abAnswers.revealVisible && isGeneratingDialogueSummary && (
-        <section className="dialogue-summary-card dialogue-summary-loading" aria-live="polite">
+      {abAnswers.revealStage === 'complete' && isGeneratingDialogueSummary && (
+        <section className="dialogue-summary-card dialogue-summary-loading reveal-delayed-fade-in" aria-live="polite">
           <span className="eyebrow">{cn ? '🔗 深度对话总结' : '🔗 Deep Dialogue Summary'}</span>
           <h2>{cn ? '正在生成你们的深度对话总结…' : 'Generating your deep dialogue summary…'}</h2>
           <p>{cn ? '把这几层的发现整理成一条认知轨迹。' : 'Weaving your discoveries into a trajectory.'}</p>
@@ -398,7 +463,7 @@ export function JourneyPage() {
       )}
 
       {/* 深度对话区域 */}
-      {abAnswers.revealVisible && dialogueDepth > 0 && dialogueChain.length > 0 && (() => {
+      {abAnswers.revealStage === 'complete' && dialogueDepth > 0 && dialogueChain.length > 0 && (() => {
         const currentLayer = dialogueChain[dialogueChain.length - 1];
         return (
           <section className="deep-dialogue-section">
@@ -517,8 +582,8 @@ export function JourneyPage() {
       })()}
 
       {/* 深度对话生成追问 loading */}
-      {abAnswers.revealVisible && isGeneratingFollowup && dialogueDepth === 0 && (
-        <section className="deep-dialogue-loading" aria-live="polite">
+      {abAnswers.revealStage === 'complete' && isGeneratingFollowup && dialogueDepth === 0 && (
+        <section className="deep-dialogue-loading reveal-delayed-fade-in" aria-live="polite">
           <span className="eyebrow">{cn ? '🔗 深度对话' : '🔗 Deep Dialogue'}</span>
           <h2>{cn ? '正在为你们准备更深的对话…' : 'Preparing a deeper dialogue for you…'}</h2>
           <p>{cn ? 'AI 正在基于你们的不同视角生成追问。' : 'AI is crafting a follow-up based on your different perspectives.'}</p>
@@ -527,7 +592,7 @@ export function JourneyPage() {
 
       {/* 深度对话入口按钮（原题揭晓后，未开启深度对话时）
           低共鸣（<30%）探索差异，高共鸣（≥70%）深化连接 */}
-      {abAnswers.revealVisible && dialogueDepth === 0 && !dialogueSummary && !isGeneratingFollowup && (abAnswers.similarity < SIMILARITY_THRESHOLD.MEDIUM || abAnswers.similarity >= SIMILARITY_THRESHOLD.DEEP_RESONANCE) && (
+      {abAnswers.revealStage === 'complete' && dialogueDepth === 0 && !dialogueSummary && !isGeneratingFollowup && (abAnswers.similarity < SIMILARITY_THRESHOLD.MEDIUM || abAnswers.similarity >= SIMILARITY_THRESHOLD.DEEP_RESONANCE) && (
         <div className="deep-dialogue-entry">
           <button className="secondary-btn deep-dialogue-btn" type="button" disabled={isGeneratingFollowup} onClick={() => void startDeepDialogue()}>
             {abAnswers.similarity >= SIMILARITY_THRESHOLD.DEEP_RESONANCE
@@ -553,8 +618,8 @@ export function JourneyPage() {
         onCancel={() => setShowExitConfirm(false)}
       />
 
-      {abAnswers.revealVisible && (
-        <div className="flow-actions">
+      {abAnswers.revealStage === 'complete' && (
+        <div className="flow-actions reveal-delayed-fade-in">
           <button className="primary-btn" type="button" disabled={isGeneratingNextQuestion} onClick={goToNextQuestion}>
             {isGeneratingNextQuestion ? (cn ? 'AI 出题中…' : 'AI generating…') : (cn ? '继续探索' : 'Keep Exploring')}
           </button>

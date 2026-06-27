@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import { generateAiDialogueSummary, generateAiFollowup, generateAiInsights, generateAiQuestion, generateAiSimilarity, generateAiSummary } from '../features/relationship/aiJourneyService';
+
+// 分阶段揭晓的停顿辅助
+function delay(ms: number) {
+  return new Promise((resolve) => { window.setTimeout(resolve, ms); });
+}
 import type { DynamicDepthContext } from '../features/relationship/aiJourneyService';
 import { getGoalOption } from '../features/relationship/relationship.config';
 import { JOURNEY_PROGRESS_DELTA, SIMILARITY_THRESHOLD } from '../features/relationship/journeyConfig';
@@ -93,6 +98,7 @@ const defaultABAnswers: ABAnswers = {
   revealVisible: false,
   answerAReady: false,
   answerBReady: false,
+  revealStage: 'idle',
 };
 
 const defaultRoute: JourneyRoute = {
@@ -406,10 +412,13 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
     const localSimilarity = calculateSimilarity(answerA, answerB);
     const hasMoment = Boolean(state.presentMoment.scene || state.presentMoment.text || state.presentMoment.image);
 
-    // 标记正在揭晓，UI 显示 loading
+    // 阶段 1：期待期——双方都准备好了，制造仪式感的停顿
+    set({ abAnswers: { ...state.abAnswers, revealStage: 'anticipating' } });
+    await delay(1800);
+
+    // 阶段 2：后台并行计算 AI 相似度和洞察（loading 态）
     set({ isRevealing: true });
 
-    // AI 语义相似度计算：优先调用 AI 获取更准确的语义相似度，失败回退到本地算法
     let similarity = localSimilarity;
     try {
       const aiSimResult = await generateAiSimilarity({ answerA, answerB, localSimilarity });
@@ -420,7 +429,6 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
       // AI 失败时使用本地算法结果
     }
 
-    // 优先用 AI 生成个性化洞察，失败回退到规则引擎
     let insights: ABInsights;
     try {
       const aiResult = await generateAiInsights({
@@ -435,24 +443,45 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
       });
       insights = aiResult.insights;
     } catch {
-      // 回退到规则引擎
       insights = generateABInsights(answerA, answerB, region);
     }
 
+    const intensity: 'high' | 'medium' | 'low' = similarity >= SIMILARITY_THRESHOLD.HIGH ? 'high' : similarity >= SIMILARITY_THRESHOLD.MEDIUM ? 'medium' : 'low';
     const generatedEvent = generateRelationshipEvent({
       region,
       questionType: state.currentQuestion.type,
       similarity,
       hasMoment,
     });
+
+    // 阶段 3：先揭示对方答案（不带评判），停留专注时刻
     set({
       isRevealing: false,
       abAnswers: {
         ...state.abAnswers,
-        similarity,
-        intensity: similarity >= SIMILARITY_THRESHOLD.HIGH ? 'high' : similarity >= SIMILARITY_THRESHOLD.MEDIUM ? 'medium' : 'low',
-        insights,
         revealVisible: true,
+        revealStage: 'revealing_answer',
+      },
+    });
+    await delay(2200);
+
+    // 阶段 4：渐入相似度仪表
+    set({
+      abAnswers: {
+        ...get().abAnswers,
+        similarity,
+        intensity,
+        revealStage: 'revealing_similarity',
+      },
+    });
+    await delay(1500);
+
+    // 阶段 5：呈现柔化洞察 + 世界更新（完成）
+    set({
+      abAnswers: {
+        ...get().abAnswers,
+        insights,
+        revealStage: 'complete',
       },
       events: generatedEvent ? [...state.events, generatedEvent] : state.events,
       worldState: {

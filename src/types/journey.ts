@@ -50,6 +50,8 @@ export interface ABAnswers {
   revealVisible: boolean;
   answerAReady: boolean;
   answerBReady: boolean;
+  // 分阶段揭晓：idle=未揭晓, anticipating=期待期(双方ready), revealing_answer=揭示对方答案, revealing_similarity=渐入相似度, revealing_insight=呈现洞察, complete=完成
+  revealStage: 'idle' | 'anticipating' | 'revealing_answer' | 'revealing_similarity' | 'revealing_insight' | 'complete';
 }
 
 export interface JourneyHistoryItem {
