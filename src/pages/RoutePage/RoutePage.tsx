@@ -55,6 +55,7 @@ export function RoutePage() {
   const relationshipStage = useJourneyStore((state) => state.relationshipStage);
   const goal = useJourneyStore((state) => state.goal);
   const route = useJourneyStore((state) => state.route);
+  const setRoute = useJourneyStore((state) => state.setRoute);
   const presentMoment = useJourneyStore((state) => state.presentMoment);
   const sessionId = useSessionStore((state) => state.session?.id);
   const applyPresentMoment = useJourneyStore((state) => state.applyPresentMoment);
@@ -227,7 +228,7 @@ export function RoutePage() {
       });
       showAppliedHint(isCloudVision
         ? (language === 'cn' ? '云端视觉理解已应用到路线' : 'Cloud vision applied to route')
-        : (language === 'cn' ? '云端视觉暂不可用，已保留基础图片线索' : 'Cloud vision unavailable, basic image cues kept'));
+        : (cloudResult.reason || (language === 'cn' ? '图片里没有识别出足够清晰的场景信息，已保留基础图片线索' : 'No clear scene information was recognized, so basic image cues were kept')));
     } catch {
       showAppliedHint(language === 'cn' ? '云端视觉暂不可用，已保留基础图片线索' : 'Cloud vision unavailable, basic image cues kept');
     }
@@ -240,15 +241,22 @@ export function RoutePage() {
       const ocrTags = Array.from(new Set([...cloudTags, ...inferImageTags(momentFile.name, momentText, ocr.text)]));
       const combinedMomentText = [momentText, ocr.text].filter(Boolean).join(' ');
       const currentMoment = useJourneyStore.getState().presentMoment;
+      const shouldKeepVisionFallback = Boolean(currentMoment.routeInfluence?.reason) && !ocr.text;
       const ocrRouteInfluence = currentMoment.imageUnderstandingSource === 'cloud-vlm'
         ? currentMoment.routeInfluence
+        : shouldKeepVisionFallback
+          ? currentMoment.routeInfluence
         : getMomentInfluence(presentMoment.scene, combinedMomentText, ocrTags);
       applyPresentMoment({
         text: momentText,
         image: momentFile.name,
         imagePreview,
         imageTags: ocrTags,
-        imageUnderstandingSource: currentMoment.imageUnderstandingSource === 'cloud-vlm' ? 'cloud-vlm' : 'local-ocr',
+        imageUnderstandingSource: currentMoment.imageUnderstandingSource === 'cloud-vlm'
+          ? 'cloud-vlm'
+          : ocr.text
+            ? 'local-ocr'
+            : currentMoment.imageUnderstandingSource,
         imageOcrText: ocr.text,
         imageOcrConfidence: ocr.confidence,
         imageOcrStatus: 'done',

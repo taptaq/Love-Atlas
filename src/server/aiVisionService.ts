@@ -46,6 +46,18 @@ function normalizeArea(value: unknown): MapArea {
     : 'coast';
 }
 
+function normalizeCaption(value: unknown) {
+  if (typeof value !== 'string') return '';
+  const caption = value.trim();
+  if (!caption) return '';
+  const compactCaption = caption.toLowerCase().replace(/[\s._-]+/g, '');
+  const emptyCaptions = new Set(['empty', 'none', 'null', 'na', 'n/a', 'unknown', 'blank']);
+  if (emptyCaptions.has(compactCaption)) return '';
+  if (/^(no|not)(clear|visible|recognizable|enough)?(image|content|scene|object)?$/i.test(caption.replace(/\s+/g, ''))) return '';
+  if (/^(无法|未能|没有|看不出|识别不出).{0,16}(识别|看清|内容|场景|图片)/.test(caption)) return '';
+  return caption.slice(0, 240);
+}
+
 function inferFallbackTags(fileName: string, text: string, ocrText = '') {
   const source = `${fileName} ${text} ${ocrText}`.toLowerCase();
   const tags = new Set<string>();
@@ -145,11 +157,25 @@ async function analyzeMomentImage(params: {
 
   const parsed = extractJsonObject(content);
   const tags = normalizeTags(parsed.tags);
+  const caption = normalizeCaption(parsed.caption);
+  const reason = typeof parsed.reason === 'string' ? parsed.reason.trim().slice(0, 240) : '';
+  if (!caption && !reason) {
+    const fallbackTags = tags.length > 0 ? tags : inferFallbackTags(params.fileName, params.momentText, params.ocrText);
+    return {
+      tags: fallbackTags,
+      area: inferFallbackArea(fallbackTags),
+      caption: '',
+      reason: params.language === 'cn'
+        ? '图片里没有识别出足够清晰的场景信息，已保留基础图片线索。'
+        : 'No clear scene information was recognized in this image, so basic image cues were kept.',
+      source: 'fallback',
+    };
+  }
   return {
     tags: tags.length > 0 ? tags : ['moment'],
     area: normalizeArea(parsed.area),
-    caption: typeof parsed.caption === 'string' ? parsed.caption.trim().slice(0, 240) : '',
-    reason: typeof parsed.reason === 'string' ? parsed.reason.trim().slice(0, 240) : '',
+    caption,
+    reason,
     source: 'cloud-vlm',
   };
 }
