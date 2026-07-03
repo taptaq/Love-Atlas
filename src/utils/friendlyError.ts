@@ -10,6 +10,7 @@ const errorMap: Array<{ match: RegExp; cn: string; en: string }> = [
   { match: /Only active space members|not a member|不是成员/i, cn: '你还不是这个空间的成员，请重新加入。', en: 'You are not a member of this space. Please rejoin.' },
   { match: /Participant ID is required|participantId/i, cn: '需要你的参与者身份才能操作，请重新进入空间。', en: 'Your participant identity is required. Please re-enter the space.' },
   { match: /maximum.*member|成员上限|已满/i, cn: '空间人数已满（最多 2 人），无法再加入。', en: 'This space is full (max 2 members).' },
+  { match: /already.*active companion persistent relationship space/i, cn: '你已经拥有一个虚拟伴侣专属空间了，无法再创建/升级。如需新建，请先在空间设置里解绑现有空间。', en: 'You already have an active companion private space. Please unbind it first.' },
   { match: /already.*active persistent relationship space|已有专属关系空间|专属关系空间.*已存在/i, cn: '升级失败：你已经拥有一个专属关系空间了，无法再升级。如需新建，请先在空间设置里解绑现有空间。', en: 'Upgrade failed: you already have an active private relationship space. Please unbind it first.' },
   { match: /already.*active|已有活跃/i, cn: '你已经在一个活跃空间里了，请先离开当前空间。', en: 'You are already in an active space. Please leave it first.' },
   { match: /already.*exists|已存在/i, cn: '这个空间已经存在了，试试直接加入？', en: 'This space already exists. Try joining it instead?' },

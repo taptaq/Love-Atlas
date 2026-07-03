@@ -63,24 +63,25 @@ async function readErrorMessage(response: Response) {
   return text || `Request failed with status ${response.status}`;
 }
 
-export async function createTemporarySpace(sharedState: RelationshipSharedState) {
+export async function createTemporarySpace(sharedState: RelationshipSharedState, companion = false) {
   const participantId = createParticipantId();
-  return postJson<SpaceApiResult>('/api/spaces/create-temporary', { participantId, sharedState });
+  return postJson<SpaceApiResult>('/api/spaces/create-temporary', { participantId, companion, sharedState });
 }
 
-export async function createPersistentSpace(sharedState: RelationshipSharedState, userId: string) {
+export async function createPersistentSpace(sharedState: RelationshipSharedState, userId: string, companion = false) {
   const participantId = createParticipantId();
-  return postJson<SpaceApiResult>('/api/spaces/create-persistent', { participantId, userId, sharedState });
+  return postJson<SpaceApiResult>('/api/spaces/create-persistent', { participantId, userId, companion, sharedState });
 }
 
 // 查询当前用户已有的活跃专属关系空间，存在则返回，避免重复创建报错
-export async function findMyPersistentSpace() {
-  return getJson<MyPersistentSpaceResult>('/api/spaces/my-persistent');
+// companion=true 查虚拟伴侣永久空间，companion=false 查真人双人永久空间
+export async function findMyPersistentSpace(companion = false) {
+  return getJson<MyPersistentSpaceResult>(`/api/spaces/my-persistent?companion=${companion ? 'true' : 'false'}`);
 }
 
-export async function upgradeTemporarySpace(spaceId: string, userId: string) {
+export async function upgradeTemporarySpace(spaceId: string, userId: string, companion = false) {
   const participantId = createParticipantId();
-  return postJson<SpaceApiResult>('/api/spaces/upgrade-temporary', { spaceId, participantId, userId });
+  return postJson<SpaceApiResult>('/api/spaces/upgrade-temporary', { spaceId, participantId, userId, companion });
 }
 
 export async function joinRelationshipSpace(inviteCode: string, userId?: string) {

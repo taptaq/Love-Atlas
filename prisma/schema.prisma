@@ -182,6 +182,7 @@ model RelationshipSpace {
   status                 String                    @default("waiting")
   inviteCode             String                    @unique @map("invite_code")
   name                   String?
+  companion              Boolean                   @default(false)
   createdByUserId        String?                   @map("created_by_user_id")
   createdByParticipantId String?                   @map("created_by_participant_id")
   expiresAt              DateTime?                 @map("expires_at") @db.Timestamptz(6)
@@ -206,6 +207,7 @@ model RelationshipSpaceMember {
   id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   spaceId       String            @map("space_id") @db.Uuid
   spaceType     String            @map("space_type")
+  companion     Boolean           @default(false)
   userId        String?           @map("user_id")
   participantId String?           @map("participant_id")
   role          String
@@ -223,6 +225,7 @@ model RelationshipSpaceMember {
   @@index([userId])
   @@index([participantId])
   @@index([spaceType, status])
+  @@index([userId, companion, status])
   @@map("relationship_space_members")
 }
 

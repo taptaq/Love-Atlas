@@ -71,6 +71,7 @@ export function RoutePage() {
   const [aiLoading, setAiLoading] = useState(true);
   const [aiFallback, setAiFallback] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
+  const [imageAnalyzing, setImageAnalyzing] = useState(false);
   const stage = getStageOption(relationshipStage);
   const goalOption = getGoalOption(goal);
 
@@ -205,6 +206,7 @@ export function RoutePage() {
     });
     showAppliedHint(language === 'cn' ? '图片已应用，正在优先调用云端视觉理解' : 'Image applied, cloud vision is analyzing first');
 
+    setImageAnalyzing(true);
     try {
       const cloudResult = await analyzeMomentImageWithCloud({
         imageDataUrl: localPreview,
@@ -233,7 +235,10 @@ export function RoutePage() {
         ? (language === 'cn' ? '云端视觉理解已应用到路线' : 'Cloud vision applied to route')
         : (cloudResult.reason || (language === 'cn' ? '图片里没有识别出足够清晰的场景信息，已保留基础图片线索' : 'No clear scene information was recognized, so basic image cues were kept')));
     } catch {
-      showAppliedHint(language === 'cn' ? '云端视觉暂不可用，已保留基础图片线索' : 'Cloud vision unavailable, basic image cues kept');
+      // 云端视觉调用失败：明确提示目前无法解析，保留已上传图片的基础线索
+      showAppliedHint(language === 'cn' ? '图片场景目前无法解析，已保留基础图片线索' : 'Image scene cannot be parsed right now, basic cues kept');
+    } finally {
+      setImageAnalyzing(false);
     }
 
     try {
@@ -283,6 +288,7 @@ export function RoutePage() {
     <main className="page flow-page">
       <LoadingOverlay visible={aiLoading} message={language === 'cn' ? 'AI 正在生成你们今天的路线…' : 'AI is generating today\u2019s route…'} />
       <LoadingOverlay visible={imageUploading} message={language === 'cn' ? '正在上传图片…' : 'Uploading image…'} />
+      <LoadingOverlay visible={imageAnalyzing} message={language === 'cn' ? '正在解析图片场景…' : 'Analyzing image scene…'} />
       <section className="flow-header">
         <span className="step-pill">03 / {language === 'cn' ? '路线引擎' : 'Route Engine'}</span>
         <h1>{aiLoading ? (language === 'cn' ? 'AI 正在生成你们今天的路线…' : 'AI is generating today\u2019s route…') : (language === 'cn' ? 'AI 已生成你们今天的路线' : 'AI has generated today\u2019s route')}</h1>

@@ -32,9 +32,9 @@ function getSafeFileExtension(file: File) {
 
 function createStoragePath(sessionId: string, file: File) {
   const safeSessionId = sanitizePathSegment(sessionId, 'session');
-  const baseName = sanitizePathSegment(file.name.replace(/\.[^.]+$/, ''), 'moment-image');
   const extension = getSafeFileExtension(file);
-  return `${safeSessionId}/${generateUUID()}-${baseName}.${extension}`;
+  // 路径中只用 UUID，彻底避免原始文件名中的中文/特殊字符导致 Supabase Storage 400
+  return `${safeSessionId}/${generateUUID()}.${extension}`;
 }
 
 export async function uploadPresentMomentImage(sessionId: string | undefined, file: File) {

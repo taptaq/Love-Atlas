@@ -119,14 +119,14 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       setSpaceAction('creating');
       setSpaceConnecting();
       setSessionConnecting();
-      // 若已有专属永久空间，直接进入，避免重复创建报错
-      const existing = await findMyPersistentSpace();
+      // 真人双人永久空间：companion=false。若已有则直接进入，避免重复创建报错
+      const existing = await findMyPersistentSpace(false);
       if (existing.space && existing.exploration && existing.session && existing.role) {
         enterSpace({ space: existing.space, exploration: existing.exploration, session: existing.session, role: existing.role }, false);
         return;
       }
-      const result = await createPersistentSpace(selectRelationshipSharedState(useJourneyStore.getState()), authUser.id);
-      enterSpace(result);
+      const result = await createPersistentSpace(selectRelationshipSharedState(useJourneyStore.getState()), authUser.id, false);
+      enterSpace(result, false);
     } catch (error) {
       const message = friendlyError(error, language);
       setSpaceError(message);
@@ -144,7 +144,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       setSpaceAction('creating');
       setSpaceConnecting();
       setSessionConnecting();
-      const result = await createTemporarySpace(selectRelationshipSharedState(useJourneyStore.getState()));
+      const result = await createTemporarySpace(selectRelationshipSharedState(useJourneyStore.getState()), true);
       enterSpace(result, true);
     } catch (error) {
       const message = friendlyError(error, language);
@@ -167,13 +167,13 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       setSpaceAction('creating');
       setSpaceConnecting();
       setSessionConnecting();
-      // 若已有专属永久空间，直接进入（虚拟伴侣模式），避免重复创建报错
-      const existing = await findMyPersistentSpace();
+      // 虚拟伴侣永久空间：companion=true。若已有则直接进入，避免重复创建报错
+      const existing = await findMyPersistentSpace(true);
       if (existing.space && existing.exploration && existing.session && existing.role) {
         enterSpace({ space: existing.space, exploration: existing.exploration, session: existing.session, role: existing.role }, true);
         return;
       }
-      const result = await createPersistentSpace(selectRelationshipSharedState(useJourneyStore.getState()), authUser.id);
+      const result = await createPersistentSpace(selectRelationshipSharedState(useJourneyStore.getState()), authUser.id, true);
       enterSpace(result, true);
     } catch (error) {
       const message = friendlyError(error, language);
@@ -240,14 +240,16 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       setSpaceAction('creating');
       setSpaceConnecting();
       setSessionConnecting();
-      // 若已有专属永久空间，直接进入已有空间，避免升级时 assertCanUsePersistentSpace 报错
-      const existing = await findMyPersistentSpace();
+      // 升级保留当前模式：虚拟伴侣临时空间 → 虚拟伴侣永久空间；真人临时空间 → 真人永久空间
+      const upgradeCompanion = isCompanion;
+      // 若已有同模式专属永久空间，直接进入已有空间，避免升级时 assertCanUsePersistentSpace 报错
+      const existing = await findMyPersistentSpace(upgradeCompanion);
       if (existing.space && existing.exploration && existing.session && existing.role) {
-        enterSpace({ space: existing.space, exploration: existing.exploration, session: existing.session, role: existing.role }, false);
+        enterSpace({ space: existing.space, exploration: existing.exploration, session: existing.session, role: existing.role }, upgradeCompanion);
         return;
       }
-      const result = await upgradeTemporarySpace(space.id, authUser.id);
-      enterSpace(result);
+      const result = await upgradeTemporarySpace(space.id, authUser.id, upgradeCompanion);
+      enterSpace(result, upgradeCompanion);
     } catch (error) {
       const message = friendlyError(error, language);
       setSpaceError(message);

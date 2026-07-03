@@ -11,6 +11,7 @@ export type RelationshipSpace = {
   status: RelationshipSpaceStatus;
   invite_code: string;
   name: string | null;
+  companion: boolean;
   created_by_user_id: string | null;
   created_by_participant_id: string | null;
   expires_at: string | null;

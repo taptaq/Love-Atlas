@@ -115,6 +115,7 @@ function normalizeSpace(space: {
   status: string;
   inviteCode: string;
   name: string | null;
+  companion: boolean;
   createdByUserId: string | null;
   createdByParticipantId: string | null;
   expiresAt: Date | null;
@@ -127,6 +128,7 @@ function normalizeSpace(space: {
     status: space.status,
     invite_code: space.inviteCode,
     name: space.name,
+    companion: space.companion,
     created_by_user_id: space.createdByUserId,
     created_by_participant_id: space.createdByParticipantId,
     expires_at: space.expiresAt?.toISOString() ?? null,
@@ -161,15 +163,19 @@ function normalizeExploration(exploration: {
   };
 }
 
-async function assertCanUsePersistentSpace(userId: string) {
+// 永久空间限制：每个用户可同时拥有一个虚拟伴侣永久空间和一个真人双人永久空间
+async function assertCanUsePersistentSpace(userId: string, companion: boolean) {
   const existing = await prisma.relationshipSpaceMember.findFirst({
     where: {
       userId,
       spaceType: 'persistent',
+      companion,
       status: 'active',
     },
   });
-  if (existing) throw new Error('This user already has an active persistent relationship space');
+  if (existing) throw new Error(companion
+    ? 'This user already has an active companion persistent relationship space'
+    : 'This user already has an active persistent relationship space');
 }
 
 async function assertCanReadSpace(spaceId: string, authUser: AuthUser | null) {
@@ -188,19 +194,24 @@ async function assertCanReadSpace(spaceId: string, authUser: AuthUser | null) {
 async function createSpaceWithExploration(params: {
   type: SpaceType;
   role: SpaceRole;
+  companion?: boolean;
   participantId?: string;
   userId?: string;
   sharedState: unknown;
 }) {
   if (params.type === 'persistent' && !params.userId) throw new Error('Persistent spaces require a userId');
   if (params.type === 'temporary' && !params.participantId) throw new Error('Temporary spaces require a participantId');
-  if (params.type === 'persistent' && params.userId) await assertCanUsePersistentSpace(params.userId);
+  const companion = Boolean(params.companion);
+  if (params.type === 'persistent' && params.userId) await assertCanUsePersistentSpace(params.userId, companion);
 
   const inviteCode = createInviteCode();
   const legacySessionId = inviteCode;
   const relationshipStage = readSharedValue(params.sharedState, 'relationshipStage');
   const goal = readSharedValue(params.sharedState, 'goal');
   const expiresAt = params.type === 'temporary' ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null;
+  const spaceName = params.type === 'temporary'
+    ? (companion ? '虚拟伴侣临时空间' : '临时探索空间')
+    : (companion ? '虚拟伴侣专属空间' : '专属关系空间');
 
   return prisma.$transaction(async (transaction) => {
     const space = await transaction.relationshipSpace.create({
@@ -208,7 +219,8 @@ async function createSpaceWithExploration(params: {
         type: params.type,
         status: 'waiting',
         inviteCode,
-        name: params.type === 'temporary' ? '临时探索空间' : '专属关系空间',
+        name: spaceName,
+        companion,
         createdByUserId: params.userId,
         createdByParticipantId: params.participantId,
         expiresAt,
@@ -251,6 +263,7 @@ async function createSpaceWithExploration(params: {
       data: {
         spaceId: space.id,
         spaceType: params.type,
+        companion,
         userId: params.userId,
         participantId: params.participantId,
         role: params.role,
@@ -278,7 +291,8 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
     if (request.method === 'POST' && request.url === '/api/spaces/create-temporary') {
       const participantId = String(body.participantId ?? '');
       const sharedState = body.sharedState ?? {};
-      const { space, exploration, legacySession } = await createSpaceWithExploration({ type: 'temporary', role: 'owner', participantId, sharedState });
+      const companion = Boolean(body.companion);
+      const { space, exploration, legacySession } = await createSpaceWithExploration({ type: 'temporary', role: 'owner', companion, participantId, sharedState });
       sendJson(response, 200, { space: normalizeSpace(space), exploration: normalizeExploration(exploration), session: normalizeLegacySession(legacySession), role: 'owner' });
       return true;
     }
@@ -287,7 +301,8 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
       const spaceId = String(body.spaceId ?? '');
       const participantId = String(body.participantId ?? '') || undefined;
       const userId = requireUserId(authUser, String(body.userId ?? '') || undefined);
-      await assertCanUsePersistentSpace(userId);
+      const companion = Boolean(body.companion);
+      await assertCanUsePersistentSpace(userId, companion);
       const space = await prisma.relationshipSpace.findUnique({
         where: { id: spaceId },
         include: { explorations: { orderBy: { createdAt: 'desc' }, take: 1 }, members: { where: { status: 'active' } } },
@@ -300,11 +315,11 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
       const result = await prisma.$transaction(async (transaction) => {
         const upgradedSpace = await transaction.relationshipSpace.update({
           where: { id: space.id },
-          data: { type: 'persistent', status: 'active', createdByUserId: userId, expiresAt: null, name: '专属关系空间' },
+          data: { type: 'persistent', status: 'active', createdByUserId: userId, expiresAt: null, name: companion ? '虚拟伴侣专属空间' : '专属关系空间', companion },
         });
         await transaction.relationshipSpaceMember.updateMany({
           where: { spaceId: space.id, participantId, status: 'active' },
-          data: { userId, spaceType: 'persistent', role: 'owner', lastSeenAt: new Date() },
+          data: { userId, spaceType: 'persistent', companion, role: 'owner', lastSeenAt: new Date() },
         });
         await transaction.explorationSession.updateMany({
           where: { spaceId: space.id },
@@ -321,10 +336,13 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
     }
 
     // 查询当前用户已有的活跃专属关系空间，存在则直接返回，避免重复创建报错
+    // 通过 ?companion=true|false 区分虚拟伴侣空间与真人双人空间
     if (request.method === 'GET' && request.url.startsWith('/api/spaces/my-persistent')) {
       const userId = requireUserId(authUser, undefined);
+      const urlObj = new URL(request.url, 'http://localhost');
+      const companion = urlObj.searchParams.get('companion') === 'true';
       const member = await prisma.relationshipSpaceMember.findFirst({
-        where: { userId, spaceType: 'persistent', status: 'active' },
+        where: { userId, spaceType: 'persistent', companion, status: 'active' },
         orderBy: { joinedAt: 'desc' },
       });
       if (!member) {
@@ -355,7 +373,8 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
       const userId = requireUserId(authUser, String(body.userId ?? '') || undefined);
       const participantId = String(body.participantId ?? '') || undefined;
       const sharedState = body.sharedState ?? {};
-      const { space, exploration, legacySession } = await createSpaceWithExploration({ type: 'persistent', role: 'owner', userId, participantId, sharedState });
+      const companion = Boolean(body.companion);
+      const { space, exploration, legacySession } = await createSpaceWithExploration({ type: 'persistent', role: 'owner', companion, userId, participantId, sharedState });
       sendJson(response, 200, { space: normalizeSpace(space), exploration: normalizeExploration(exploration), session: normalizeLegacySession(legacySession), role: 'owner' });
       return true;
     }
@@ -371,7 +390,7 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
 
       if (!space) throw new Error('Space not found');
       if (space.type === 'persistent') userId = requireUserId(authUser, String(body.userId ?? '') || undefined);
-      if (space.type === 'persistent' && userId) await assertCanUsePersistentSpace(userId);
+      if (space.type === 'persistent' && userId) await assertCanUsePersistentSpace(userId, space.companion);
       if (space.members.length >= 2 && !space.members.some((member) => member.userId === userId || member.participantId === participantId)) throw new Error('This space already has two active members');
       if (space.expiresAt && space.expiresAt.getTime() < Date.now()) throw new Error('This temporary space has expired');
 
@@ -385,6 +404,7 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
           create: {
             spaceId: space.id,
             spaceType: space.type,
+            companion: space.companion,
             userId,
             participantId,
             role: 'partner',
