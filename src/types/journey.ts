@@ -13,7 +13,7 @@ export type QuestionType = 'guess' | 'mirror' | 'choice' | 'sync';
 export interface JourneyRoute {
   areas: MapArea[];
   reason: LocalizedText | string;
-  generatedBy: 'relationship' | 'presentMoment' | 'hybrid';
+  generatedBy: 'relationship' | 'presentMoment' | 'hybrid' | 'ai';
 }
 
 export interface JourneyQuestion {
