@@ -237,14 +237,23 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       return;
     }
     try {
+      setSpaceAction('creating');
       setSpaceConnecting();
       setSessionConnecting();
+      // 若已有专属永久空间，直接进入已有空间，避免升级时 assertCanUsePersistentSpace 报错
+      const existing = await findMyPersistentSpace();
+      if (existing.space && existing.exploration && existing.session && existing.role) {
+        enterSpace({ space: existing.space, exploration: existing.exploration, session: existing.session, role: existing.role }, false);
+        return;
+      }
       const result = await upgradeTemporarySpace(space.id, authUser.id);
       enterSpace(result);
     } catch (error) {
       const message = friendlyError(error, language);
       setSpaceError(message);
       setSessionError(message);
+    } finally {
+      setSpaceAction(null);
     }
   };
 

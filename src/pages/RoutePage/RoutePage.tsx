@@ -74,7 +74,7 @@ export function RoutePage() {
   const stage = getStageOption(relationshipStage);
   const goalOption = getGoalOption(goal);
 
-  // AI 生成路线，失败时用固定组合兜底
+  // AI 生成路线，失败时用固定组合兜底；生成后同步写入 store，确保 summary 取到的是用户实际看到的路线
   useEffect(() => {
     let cancelled = false;
     setAiLoading(true);
@@ -84,6 +84,8 @@ export function RoutePage() {
         setAiRouteAreas(result.areas);
         setAiRouteReason(result.reason);
         setAiFallback(false);
+        // 关键：把 AI 路线写入 store，否则 endJourney 的 summary.route 会取到旧的静态路线
+        setRoute({ areas: result.areas, reason: result.reason, generatedBy: 'ai' });
       })
       .catch(() => {
         if (cancelled) return;
@@ -92,6 +94,7 @@ export function RoutePage() {
         setAiRouteAreas(fallbackAreas);
         setAiRouteReason('');
         setAiFallback(true);
+        setRoute({ areas: fallbackAreas, reason: '', generatedBy: 'relationship' });
       })
       .finally(() => {
         if (!cancelled) setAiLoading(false);
@@ -100,7 +103,7 @@ export function RoutePage() {
       cancelled = true;
       window.clearTimeout(appliedHintTimer.current);
     };
-  }, [relationshipStage, goal, language]);
+  }, [relationshipStage, goal, language, setRoute]);
 
   const routeAreas = aiRouteAreas ?? (route.areas.length > 0 ? route.areas : goalOption ? [goalOption.primaryArea] : []);
   const routeReason = aiRouteReason || (typeof route.reason === 'string' ? route.reason : route.reason?.[language]);
