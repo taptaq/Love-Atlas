@@ -38,10 +38,14 @@
   box-sizing: border-box;
 }
 
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
   background:
     radial-gradient(circle at 20% 20%, rgba(139, 92, 246, 0.22), transparent 34%),
     radial-gradient(circle at 80% 8%, rgba(59, 130, 246, 0.16), transparent 30%),
@@ -54,9 +58,19 @@ button {
 
 .app-shell {
   position: relative;
-  min-height: 100vh;
-  overflow-x: hidden;
-  padding: 32px clamp(20px, 4.5vw, 48px);
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 clamp(20px, 4.5vw, 48px);
+}
+
+.app-shell > main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 无障碍：跳到主要内容链接 */
@@ -389,15 +403,34 @@ button {
   position: relative;
   z-index: 1;
   width: min(100%, 980px);
-  min-height: 100vh;
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0 auto;
-  padding: 120px 0 64px;
+  padding: 96px 0 32px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   animation: pageRise 0.55s ease both;
 }
 
+/* 页面内部滚动条样式 */
+.page::-webkit-scrollbar {
+  width: 6px;
+}
+.page::-webkit-scrollbar-track {
+  background: transparent;
+}
+.page::-webkit-scrollbar-thumb {
+  background: rgba(196, 181, 253, 0.2);
+  border-radius: var(--radius-pill);
+}
+.page::-webkit-scrollbar-thumb:hover {
+  background: rgba(196, 181, 253, 0.35);
+}
+
 @keyframes pageRise {
-  from { opacity: 0; transform: translateY(18px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes softPulse {
@@ -1537,6 +1570,7 @@ button {
 
 .confirm-modal {
   width: min(380px, 100%);
+  max-height: min(520px, calc(100vh - 48px));
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1547,6 +1581,7 @@ button {
   box-shadow: 0 40px 90px rgba(0, 0, 0, 0.55);
   color: #e8ebf5;
   animation: pageRise 0.24s ease both;
+  overflow-y: auto;
 }
 
 .confirm-modal-danger {
@@ -1637,12 +1672,11 @@ button {
 
 .term-tooltip-content {
   position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
+  top: calc(100% + 8px);
+  left: 0;
   z-index: 100;
   width: max-content;
-  max-width: 260px;
+  max-width: min(260px, calc(100vw - 32px));
   padding: 8px 12px;
   border-radius: var(--radius-sm);
   background: rgba(28, 22, 50, 0.96);
@@ -3604,7 +3638,6 @@ button {
 
 .flow-page {
   width: min(100%, 840px);
-  min-height: 100vh;
 }
 
 .flow-header {
@@ -4133,7 +4166,7 @@ button {
 
 @media (max-width: 900px) {
   .app-shell {
-    padding: 28px clamp(18px, 4vw, 32px);
+    padding: 0 clamp(18px, 4vw, 32px);
   }
 
   .page,
@@ -4183,7 +4216,7 @@ button {
 
 @media (max-width: 680px) {
   .app-shell {
-    padding: 16px;
+    padding: 0 16px;
     overflow-x: hidden;
   }
 
@@ -4405,7 +4438,7 @@ button {
     min-height: 120px;
   }
   .app-shell {
-    padding: 14px;
+    padding: 0 14px;
   }
 
   .stars span {
@@ -4616,7 +4649,7 @@ button {
 
 @media (max-width: 420px) {
   .app-shell {
-    padding: 14px;
+    padding: 0 14px;
   }
 
   .page,
