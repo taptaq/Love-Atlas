@@ -413,19 +413,22 @@ button {
   animation: pageRise 0.55s ease both;
 }
 
-/* 页面内部滚动条样式 */
+/* 页面内部滚动条：完全隐藏，但保留滚动能力 */
+.page {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
 .page::-webkit-scrollbar {
-  width: 6px;
+  display: none;
 }
-.page::-webkit-scrollbar-track {
-  background: transparent;
+
+/* 所有可滚动容器默认隐藏滚动条（保留滚动能力） */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-.page::-webkit-scrollbar-thumb {
-  background: rgba(196, 181, 253, 0.2);
-  border-radius: var(--radius-pill);
-}
-.page::-webkit-scrollbar-thumb:hover {
-  background: rgba(196, 181, 253, 0.35);
+*::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes pageRise {

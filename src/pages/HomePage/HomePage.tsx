@@ -514,28 +514,28 @@ export function HomePage({ memberCount }: { memberCount: number }) {
 
         {hasSpace && isPersistentSpace && (
           <aside className="space-secondary-card">
-            <span className="eyebrow">{language === 'cn' ? '专属空间内会发生什么' : 'Inside Your Private Space'}</span>
+            <span className="eyebrow">{t(language, 'insidePrivateSpace')}</span>
             <div className="space-flow-list">
-              <span>Setup</span>
-              <span>Goal</span>
-              <span>Route</span>
-              <span>AB</span>
-              <span>Mirror</span>
-              <span>Summary</span>
+              <span>{t(language, 'stepSetup')}</span>
+              <span>{t(language, 'stepGoal')}</span>
+              <span>{t(language, 'stepRoute')}</span>
+              <span>{t(language, 'stepAB')}</span>
+              <span>{t(language, 'stepMirror')}</span>
+              <span>{t(language, 'stepSummary')}</span>
             </div>
-            <button type="button" onClick={handleStartExploration}>{language === 'cn' ? '开启新的探索' : 'Start a New Exploration'}</button>
+            <button type="button" onClick={handleStartExploration}>{t(language, 'startNewExploration')}</button>
             <button type="button" onClick={() => goToStep('world')}>{t(language, 'worldTitle')}</button>
             <button type="button" onClick={() => goToStep('discoveryAtlas')}>
               {latest ? `${t(language, 'latestDiscovery')} · ${latestCopy?.title}` : t(language, 'emptyDiscovery')}
             </button>
-            <button type="button" onClick={() => goToStep('spaceManagement')}>{language === 'cn' ? '管理空间' : 'Manage Space'}</button>
-            <button type="button" onClick={() => goToStep('spaceLibrary')}>{language === 'cn' ? '长期沉淀' : 'Long-term Library'}</button>
+            <button type="button" onClick={() => goToStep('spaceManagement')}>{t(language, 'manageSpace')}</button>
+            <button type="button" onClick={() => goToStep('spaceLibrary')}>{t(language, 'longTermLibrary')}</button>
             <button type="button" onClick={handleOpenHistory}>
               {explorationsLoading
                 ? (language === 'cn' ? '历史探索 加载中…' : 'Loading explorations…')
-                : (language === 'cn' ? `历史探索 ${explorations.length} 次` : `${explorations.length} Past Explorations`)}
+                : (language === 'cn' ? `历史探索 ${explorations.length} 次` : `${explorations.length} ${t(language, 'pastExplorations')}`)}
             </button>
-            <button type="button" onClick={() => setPendingConfirm('unbind')}>{language === 'cn' ? '解绑专属空间' : 'Unbind Private Space'}</button>
+            <button type="button" onClick={() => setPendingConfirm('unbind')}>{t(language, 'unbindPrivateSpace')}</button>
           </aside>
         )}
       </section>
