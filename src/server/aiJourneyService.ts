@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { getGoalOption, getStageOption } from '../features/relationship/relationship.config';
 
 type ApiBody = Record<string, unknown>;
 type MapArea = 'forest' | 'coast' | 'valley' | 'city' | 'garden';
@@ -143,12 +144,22 @@ async function generateQuestion(body: ApiBody) {
   const stage = asString(body.stage, 'unknown');
   const stageDepthMap: Record<string, string> = {
     'new': [
-      'Stage depth guidance (Just Beginning):',
+      'Stage depth guidance (Just Met):',
       '- Keep questions light, playful, and low-pressure — this is early exploration.',
       '- Focus on discovering preferences, daily habits, small stories, and values through casual topics.',
       '- Avoid heavy topics like commitment, conflict, deep vulnerability, or future planning.',
       '- Tone: curious, warm, like getting to know a new friend you are excited about.',
       '- Good angles: favorite memories, comfort zones, what makes them laugh, small surprises.',
+    ].join('\n'),
+    'ambiguous': [
+      'Stage depth guidance (Ambiguous / undefined relationship):',
+      '- There is chemistry and ongoing interaction, but the relationship is NOT yet defined.',
+      '- Questions should gently surface the UNSAID: expectations, hopes, the meaning each assigns to what is happening.',
+      '- It is okay to test the waters of "what are we" — but indirectly, through feelings and moments, not direct labels.',
+      '- Balance: invite honesty about feelings WITHOUT forcing a definition or commitment.',
+      '- Avoid: explicit commitment pressure, "where is this going" demands, or treating them as already a couple.',
+      '- Tone: tender, slightly vulnerable, like 3am texts — curious about the other\'s inner world without demanding answers.',
+      '- Good angles: what this connection means to each, what they wish the other noticed, small moments that felt significant, the gap between what is shown and what is felt.',
     ].join('\n'),
     'dating': [
       'Stage depth guidance (Dating):',
@@ -176,6 +187,16 @@ async function generateQuestion(body: ApiBody) {
       '- Balance practical topics (sync, communication rhythm) with emotional ones (longing, loneliness, trust).',
       '- Tone: tender, acknowledging both the ache and the beauty of loving from afar.',
       '- Good angles: what you wish your partner could feel right now, what distance has taught you, moments you felt most connected despite being apart.',
+    ].join('\n'),
+    'reconnect': [
+      'Stage depth guidance (Reconnecting after rupture or distance):',
+      '- They are rebuilding connection after a rupture, a cold spell, or time apart.',
+      '- PACE matters more than depth — going too deep too fast can reopen wounds. Earn the depth step by step.',
+      '- Focus on: what each needs to feel safe again, what they want to keep from before, what they want to leave behind.',
+      '- Surface the rupture GENTLY — acknowledge it without re-litigating it. The goal is re-entry, not review.',
+      '- Avoid: rehashing who was right, forcing forgiveness, or demanding they "move on" quickly.',
+      '- Tone: careful, patient, warm — like reopening a door you both once closed, neither pushing nor retreating.',
+      '- Good angles: what "starting again" means to each, what small daily action would feel like reconnecting, what they hope is different this time.',
     ].join('\n'),
   };
   const stageDepth = stageDepthMap[stage] ?? 'No specific stage depth guidance. Match the tone to the relationship stage naturally.';
@@ -267,29 +288,67 @@ async function generateQuestion(body: ApiBody) {
     ? body.memory.trim()
     : '';
 
+  // goal 语义：把 goal id 转成 label/description/routeReason，让 AI 准确理解目标方向
+  const goalId = asString(body.goal, 'unknown');
+  const goalOption = getGoalOption(goalId as never);
+  const goalSemantic = goalOption
+    ? `Goal semantic: "${goalOption.label.cn}" / "${goalOption.label.en}" — ${goalOption.description.cn} / ${goalOption.description.en}. Route hint: ${goalOption.routeReason.cn}`
+    : `Goal: ${goalId}`;
+
+  // stage 语义：把 stage id 转成 label/description
+  const stageOption = getStageOption(stage as never);
+  const stageSemantic = stageOption
+    ? `Stage semantic: "${stageOption.label.cn}" / "${stageOption.label.en}" — ${stageOption.description.cn} / ${stageOption.description.en}`
+    : `Stage: ${stage}`;
+
+  // 结构化历史：含问题+答案+相似度，让 AI 看到完整对话脉络
+  const structuredHistory = Array.isArray(body.structuredHistory) ? body.structuredHistory : [];
+  const structuredHistoryHint = structuredHistory.length > 0
+    ? [
+        'Full conversation so far (questions + answers + similarity — use this to AVOID repetition AND find the natural next thread):',
+        ...structuredHistory.slice(-4).map((item: Record<string, unknown>, idx: number) =>
+          `  Q${idx + 1}: ${String(item.question ?? '').slice(0, 100)} | A: ${String(item.answerA ?? '').slice(0, 60)} | B: ${String(item.answerB ?? '').slice(0, 60)} | similarity: ${item.similarity ?? 0}%`
+        ),
+        '',
+        'CRITICAL anti-repetition rules:',
+        '- Do NOT generate a question that is semantically similar to any above, even if worded differently.',
+        '- Do NOT reuse the same scenario, metaphor, scene (garden/road/room/path), or emotional angle.',
+        '- The new question must explore a DIFFERENT facet of this stage+goal, not repeat the same facet with new words.',
+      ].join('\n')
+    : '';
+
   const prompt = [
-    'Generate one fresh relationship exploration question for two people.',
-    'The question should feel specific, warm, and useful for a real conversation.',
-    'If present-moment context is applied, let it shape the question, hint, reason, region, and emotion.',
-    'CRITICAL: The generated question must be DISTINCT from previous questions. Do NOT reuse the same scenario, metaphor, or core prompt with only minor wording changes.',
-    'If previous questions mentioned specific scenes (garden paths, roads, rooms, etc.), choose a completely different angle, topic, or emotional layer.',
+    'You are Love Atlas. Your single job: generate ONE question that helps two people start a GENUINELY DEEP conversation.',
+    'CORE VALUE: "让两个人更容易开始一次真正有深度的对话" — make it easier for two people to start a real, deep conversation.',
+    'The question must be something they would NOT easily ask each other on their own, but that opens a door rather than demanding vulnerability.',
+    'NEVER generate trivia, factual quizzes, yes/no questions, or anything that can be answered without emotional reflection.',
+    '',
+    stageSemantic,
+    goalSemantic,
+    `Full route areas: ${areas.join(', ') || fallbackArea}`,
+    `Target area for THIS question: ${targetArea}`,
     `THIS question MUST use region="${targetArea}". Do not use any other region.`,
     typeHint,
     stageDepth,
+    structuredHistoryHint,
     dynamicDepthHint,
     moodHint,
     memoryHint,
+    '',
+    'DEDUPLICATION: The generated question must be DISTINCT from all previous questions listed above.',
+    'If previous questions mentioned specific scenes (garden paths, roads, rooms, etc.), choose a completely different angle, topic, or emotional layer.',
+    'STAGE+GOAL ALIGNMENT: The question must stay tightly aligned to the stage depth guidance and the goal direction above. Do not drift to generic relationship topics.',
+    'If present-moment context is applied, let it shape the question, hint, reason, region, and emotion — but still stay within the stage+goal frame.',
+    '',
     'Return JSON only with this format:',
     '{"question":{"cn":"中文问题","en":"English question"},"hint":{"cn":"中文提示","en":"English hint"},"reason":{"cn":"中文生成理由","en":"English reason"},"emotion":"curious","region":"' + targetArea + '","type":"' + preferredType + '"}',
     'region must be one of forest/coast/valley/city/garden.',
     'type must be one of guess/mirror/choice/sync.',
     `Relationship stage: ${stage}`,
-    `Goal: ${asString(body.goal, 'unknown')}`,
-    `Full route areas: ${areas.join(', ') || fallbackArea}`,
-    `Target area for THIS question: ${targetArea}`,
+    `Goal: ${goalId}`,
     `Question index: ${questionIndex}`,
     momentContext,
-    `Previous questions (must be different from these): ${previousQuestions.join(' | ') || 'none'}`,
+    `Previous question texts (must be different from these): ${previousQuestions.join(' | ') || 'none'}`,
     `World region progress: ${JSON.stringify(body.worldProgress ?? {})}`,
   ].filter(Boolean).join('\n');
   const parsed = await callDeepSeekJson(prompt, 500);
@@ -587,11 +646,52 @@ async function generateFollowup(body: ApiBody) {
   // 触发类型：低共鸣探索差异，高共鸣深化连接
   const trigger = body.trigger === 'high_resonance' ? 'high_resonance' : 'low_resonance';
 
+  // 按层级给深度引导（通用基线）
   const depthGuidance = depth === 1
     ? 'Layer 1: light follow-up. Surface the WHY behind the answers. Do not go too deep yet.'
     : depth === 2
       ? 'Layer 2: deeper. Ask about the personal experience or memory that shaped this view.'
       : 'Layer 3: final integration. Help them INTEGRATE what they discovered — find a bridge or synthesis, not a new gap.';
+
+  // 按关系阶段覆盖/调节层级深度：不同阶段在同一 Layer 应承受的深度不同
+  const followupStageDepthMap: Record<string, string> = {
+    'new': [
+      'Stage follow-up depth (Just Met):',
+      '- Even at Layer 3, keep it LIGHT. They just met — do not ask them to integrate a shared history they do not have yet.',
+      '- Layer 1-3 should all stay within: preferences, small stories, current feelings, light "what ifs".',
+      '- NEVER push into commitment, vulnerability, or "what does this mean for us" territory.',
+    ].join('\n'),
+    'ambiguous': [
+      'Stage follow-up depth (Ambiguous):',
+      '- The unspoken is the goldmine. Follow-ups should gently probe what has NOT been said: the meaning assigned to moments, the hopes barely admitted.',
+      '- Layer 1: why each sees it this way. Layer 2: the moment/experience that seeded this feeling. Layer 3: what each wishes the other understood about where they stand.',
+      '- It is okay to edge toward "what is this to you" — but sideways, through feelings and specific moments, not direct labeling.',
+      '- NEVER force a definition. The goal is mutual honesty, not a relationship status.',
+    ].join('\n'),
+    'dating': [
+      'Stage follow-up depth (Dating):',
+      '- Moderate depth. There is closeness to build on, but avoid treating them as long-term partners.',
+      '- Layer 1-3 can touch emotional patterns, needs, communication styles — but keep it exploratory, not heavy review.',
+    ].join('\n'),
+    'long-term': [
+      'Stage follow-up depth (Long-term):',
+      '- Go deepest. Layer 1 can already be substantial — they have years of context.',
+      '- Layer 3 should aim for genuine re-integration: what has shifted, what wants to be rebuilt, what they now understand differently.',
+      '- Surface the gap between "what we assumed" and "what is actually true now".',
+    ].join('\n'),
+    'long-distance': [
+      'Stage follow-up depth (Long-distance):',
+      '- Anchor follow-ups in the texture of distance: presence/absence, what gets lost across screens, what longing sounds like.',
+      '- Layer 3 should bridge the distance emotionally — what each wishes the other could feel right now.',
+    ].join('\n'),
+    'reconnect': [
+      'Stage follow-up depth (Reconnecting):',
+      '- PACE over depth. Even at Layer 3, do not reopen the rupture or demand emotional labor.',
+      '- Layer 1: gentle why. Layer 2: what "starting again" needs. Layer 3: a small, safe bridge back to each other.',
+      '- NEVER rehash who was right. The goal is re-entry, not review.',
+    ].join('\n'),
+  };
+  const followupStageDepth = followupStageDepthMap[stage] ?? '';
 
   // 根据触发类型给出不同方向引导
   const triggerGuidance = trigger === 'high_resonance'
@@ -604,6 +704,7 @@ async function generateFollowup(body: ApiBody) {
       ? 'The two answers resonated strongly — go deeper into this shared feeling.'
       : 'The two answers came from different angles — gently explore the story behind each perspective.',
     triggerGuidance,
+    followupStageDepth,
     'CRITICAL: This question is addressed to BOTH people equally. Use "你们" / "you both" / "你们各自" to refer to the couple together.',
     'NEVER address only one person. NEVER use "你" alone to point at one specific person.',
     'NEVER say "A" or "B" in the question text. NEVER ask one person to compare themselves with the other.',

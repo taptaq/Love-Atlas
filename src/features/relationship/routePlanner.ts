@@ -3,9 +3,11 @@ import type { JourneyGoal, MapArea, RelationshipStage } from '../../types';
 
 const stageRouteMap: Record<RelationshipStage, MapArea[]> = {
   new: ['valley', 'forest'],
+  ambiguous: ['coast', 'garden'],
   dating: ['coast', 'garden'],
   'long-term': ['forest', 'valley'],
   'long-distance': ['city', 'coast'],
+  reconnect: ['garden', 'coast'],
 };
 
 // 每个主要区域对应一个互补区域，确保推荐路线至少有 2 个不同区域

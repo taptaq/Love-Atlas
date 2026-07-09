@@ -21,9 +21,16 @@ export const relationshipStages: RelationshipStageOption[] = [
   {
     id: 'new',
     icon: '🌱',
-    label: { cn: '刚刚开始', en: 'Just Beginning' },
+    label: { cn: '刚认识', en: 'Just Met' },
     description: { cn: '还在慢慢了解彼此，需要轻柔地靠近。', en: 'You are still getting to know each other and need a gentle way in.' },
     recommendedGoals: ['know', 'icebreak', 'common'],
+  },
+  {
+    id: 'ambiguous',
+    icon: '🫧',
+    label: { cn: '暧昧期', en: 'Ambiguous' },
+    description: { cn: '有了互动，却还没定义。试探、期待、没说出口的部分，都值得被听见。', en: 'There is chemistry but no label. The unspoken parts deserve to be heard.' },
+    recommendedGoals: ['connect', 'deep', 'common'],
   },
   {
     id: 'dating',
@@ -45,6 +52,13 @@ export const relationshipStages: RelationshipStageOption[] = [
     label: { cn: '异地关系', en: 'Long-distance' },
     description: { cn: '距离让同步更重要，也让想念需要被表达。', en: 'Distance makes synchronization and expression more important.' },
     recommendedGoals: ['sync', 'miss', 'future'],
+  },
+  {
+    id: 'reconnect',
+    icon: '🌗',
+    label: { cn: '重新靠近', en: 'Reconnecting' },
+    description: { cn: '经历过断裂或冷却，想重新建立连接。节奏比速度更重要。', en: 'After a rupture or a cold spell, you want to rebuild the connection slowly.' },
+    recommendedGoals: ['review', 'connect', 'common'],
   },
 ];
 
@@ -75,4 +89,35 @@ export function getRecommendedGoals(stage: RelationshipStage | null) {
   const option = getStageOption(stage);
   if (!option) return journeyGoals.slice(0, 3);
   return option.recommendedGoals.map((goal) => getGoalOption(goal)).filter((goal): goal is JourneyGoalOption => Boolean(goal));
+}
+
+/**
+ * 扩展目标：推荐 3 个 + 跨阶段可选 2 个。
+ * 跨阶段目标从其他阶段挑互补方向（让长期关系也能选「轻松破冰」、刚认识也能选「聊深一点」等），
+ * 避免用户被阶段推荐锁死，同时不会一次列出全部 12 个目标造成选择压力。
+ */
+export function getExtendedGoals(stage: RelationshipStage | null) {
+  const option = getStageOption(stage);
+  const recommended = option ? option.recommendedGoals : [];
+  const recommendedOptions = recommended
+    .map((goal) => getGoalOption(goal))
+    .filter((goal): goal is JourneyGoalOption => Boolean(goal));
+  // 跨阶段补充：从全部目标里排除已推荐的，挑 2 个方向互补的
+  const extraPool = journeyGoals.filter((g) => !recommended.includes(g.id));
+  // 简单的互补策略：优先选不同 primaryArea 的目标，保证多样性
+  const usedAreas = new Set(recommendedOptions.map((g) => g.primaryArea));
+  const extra: JourneyGoalOption[] = [];
+  for (const g of extraPool) {
+    if (extra.length >= 2) break;
+    if (!usedAreas.has(g.primaryArea)) {
+      extra.push(g);
+      usedAreas.add(g.primaryArea);
+    }
+  }
+  // 若不同区域不足 2 个，补任意未选的
+  for (const g of extraPool) {
+    if (extra.length >= 2) break;
+    if (!extra.includes(g)) extra.push(g);
+  }
+  return { recommended: recommendedOptions, extra };
 }

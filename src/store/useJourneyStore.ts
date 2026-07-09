@@ -7,7 +7,7 @@ function delay(ms: number) {
 }
 import type { DynamicDepthContext } from '../features/relationship/aiJourneyService';
 import { getGoalOption } from '../features/relationship/relationship.config';
-import { JOURNEY_PROGRESS_DELTA, SIMILARITY_THRESHOLD } from '../features/relationship/journeyConfig';
+import { JOURNEY_PROGRESS_DELTA, SIMILARITY_THRESHOLD, shouldTriggerDeepDialogue } from '../features/relationship/journeyConfig';
 import { getRecommendedRouteAreas } from '../features/relationship/routePlanner';
 import { generateABInsights, calculateSimilarity } from '../services/abEngine';
 import { generateRelationshipEvent } from '../services/eventEngine';
@@ -189,6 +189,16 @@ async function generateQuestionWithAiFallback(state: JourneyStoreState, question
   const preferredType = questionIndex % 2 === 0 ? 'guess' : 'choice';
   // 构建动态深度上下文
   const dynamicDepth = buildDynamicDepthContext(state);
+  // 构建结构化历史（含答案+相似度），让 AI 看到完整对话脉络，避免换皮重复
+  const structuredHistory = state.journeyHistory
+    .slice(-4)
+    .map((item, idx) => ({
+      index: idx,
+      question: item.question.question,
+      answerA: item.answers.answerA.slice(0, 80),
+      answerB: item.answers.answerB.slice(0, 80),
+      similarity: item.answers.similarity,
+    }));
   try {
     const aiQuestion = await generateAiQuestion({
       stage: state.relationshipStage,
@@ -199,6 +209,7 @@ async function generateQuestionWithAiFallback(state: JourneyStoreState, question
       currentQuestionIndex: questionIndex,
       moment: state.presentMoment,
       history: historyQuestions,
+      structuredHistory,
       dynamicDepth,
       worldProgress: state.worldState.regionProgress,
       // 第一题传入情绪签到，后续题不需要
@@ -690,9 +701,9 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
     const originalQuestion = state.currentQuestion.localized?.cn ?? state.currentQuestion.question;
     const answerA = prevLayer?.answerA ?? state.abAnswers.answerA;
     const answerB = prevLayer?.answerB ?? state.abAnswers.answerB;
-    // 判断触发类型：原题相似度高为高共鸣深化，低为差异探索
+    // 判断触发类型：按关系阶段差异化阈值（见 shouldTriggerDeepDialogue）
     const baseSimilarity = state.abAnswers.similarity;
-    const trigger: 'low_resonance' | 'high_resonance' = baseSimilarity >= SIMILARITY_THRESHOLD.DEEP_RESONANCE
+    const trigger: 'low_resonance' | 'high_resonance' = shouldTriggerDeepDialogue(baseSimilarity, state.relationshipStage) === 'high'
       ? 'high_resonance'
       : 'low_resonance';
 

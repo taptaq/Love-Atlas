@@ -3686,6 +3686,22 @@ button {
   margin-bottom: 32px;
 }
 
+/* 跨阶段可选目标：视觉上稍弱于推荐目标 */
+.option-grid.extra-goals {
+  gap: 16px;
+  margin-top: 8px;
+  opacity: 0.92;
+}
+.option-grid.extra-goals .eyebrow {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  opacity: 0.7;
+  letter-spacing: 0.08em;
+}
+.option-grid.extra-goals .option-card {
+  border-style: dashed;
+}
+
 /* ---------------- 情绪签到 ---------------- */
 .mood-checkin-section {
   max-width: 680px;

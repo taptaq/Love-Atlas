@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { generateAiCoach, generateAiCompanionAnswer } from '../../features/relationship/aiJourneyService';
-import { SIMILARITY_THRESHOLD } from '../../features/relationship/journeyConfig';
+import { getDeepDialogueThresholds, shouldTriggerDeepDialogue, SIMILARITY_THRESHOLD } from '../../features/relationship/journeyConfig';
 import { mapAreaConfig } from '../../features/map/map.config';
 import { useSessionStore } from '../../features/session/useSessionStore';
 import { useSpaceStore } from '../../features/session/useSpaceStore';
@@ -258,7 +258,17 @@ export function JourneyPage() {
                 ? (cn ? '💫 这题比平时聊的稍深一点' : '💫 A little deeper than usual')
                 : (cn ? '💫 试试说出平时没机会说的想法' : '💫 Share what you usually don\'t get to say');
             }
-            // new 阶段
+            if (relationshipStage === 'ambiguous') {
+              return isFirst
+                ? (cn ? '🫧 这题轻轻触碰那层没说破的期待' : '🫧 Gently touching the unspoken expectation between you')
+                : (cn ? '🫧 试探是允许的，诚实比答案更重要' : '🫧 Testing is allowed — honesty matters more than the answer');
+            }
+            if (relationshipStage === 'reconnect') {
+              return isFirst
+                ? (cn ? '🌗 这题为重新靠近留出空间，不急着定义' : '🌗 Making room to reconnect — no need to define it yet')
+                : (cn ? '🌗 重新开始可以很慢，节奏比速度重要' : '🌗 Restarting can be slow — pace matters more than speed');
+            }
+            // new 阶段（刚认识）
             return isFirst
               ? (cn ? '🍃 轻松开始，先了解彼此的小世界' : '🍃 A light start, discovering each other\'s small worlds')
               : (cn ? '🍃 慢慢来，这题没有标准答案' : '🍃 Take it easy, no right answer here');
@@ -591,16 +601,16 @@ export function JourneyPage() {
       )}
 
       {/* 深度对话入口按钮（原题揭晓后，未开启深度对话时）
-          低共鸣（<30%）探索差异，高共鸣（≥70%）深化连接 */}
-      {abAnswers.revealStage === 'complete' && dialogueDepth === 0 && !dialogueSummary && !isGeneratingFollowup && (abAnswers.similarity < SIMILARITY_THRESHOLD.MEDIUM || abAnswers.similarity >= SIMILARITY_THRESHOLD.DEEP_RESONANCE) && (
+          阈值按关系阶段差异化：new/ambiguous/reconnect 放宽到 <45 或 ≥60，其余 <35 或 ≥60 */}
+      {abAnswers.revealStage === 'complete' && dialogueDepth === 0 && !dialogueSummary && !isGeneratingFollowup && shouldTriggerDeepDialogue(abAnswers.similarity, relationshipStage) !== null && (
         <div className="deep-dialogue-entry">
           <button className="secondary-btn deep-dialogue-btn" type="button" disabled={isGeneratingFollowup} onClick={() => void startDeepDialogue()}>
-            {abAnswers.similarity >= SIMILARITY_THRESHOLD.DEEP_RESONANCE
+            {shouldTriggerDeepDialogue(abAnswers.similarity, relationshipStage) === 'high'
               ? (cn ? '✨ 深化这份共鸣 1/3' : '✨ Deepen this resonance 1/3')
               : (cn ? '🔗 继续深度对话 1/3' : '🔗 Go deeper 1/3')}
           </button>
           <p className="deep-dialogue-hint">
-            {abAnswers.similarity >= SIMILARITY_THRESHOLD.DEEP_RESONANCE
+            {shouldTriggerDeepDialogue(abAnswers.similarity, relationshipStage) === 'high'
               ? (cn ? '你们的答案产生了共鸣，可以继续深化这份连接（最多 3 层）' : 'Your answers resonated — deepen this connection (up to 3 layers)')
               : (cn ? '你们从不同角度回应了这题，可以继续深挖背后的故事（最多 3 层）' : 'Your answers came from different angles — go deeper into the story behind (up to 3 layers)')}
           </p>

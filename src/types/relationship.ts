@@ -1,4 +1,4 @@
-export type RelationshipStage = 'new' | 'dating' | 'long-term' | 'long-distance';
+export type RelationshipStage = 'new' | 'ambiguous' | 'dating' | 'long-term' | 'long-distance' | 'reconnect';
 
 export type LegacyRelationshipStage = 'ambiguous' | 'love' | 'long_term' | 'long_distance' | 'reconnect';
 

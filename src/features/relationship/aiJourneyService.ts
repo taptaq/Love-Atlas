@@ -107,6 +107,7 @@ export function generateAiQuestion(params: {
   currentQuestionIndex: number;
   moment: PresentMomentState;
   history: string[];
+  structuredHistory?: Array<{ question: string; answerA: string; answerB: string; similarity: number }>;
   dynamicDepth?: DynamicDepthContext;
   worldProgress?: Record<string, number>;
   // 情绪签到：仅第一题传入，影响问题方向和温度
