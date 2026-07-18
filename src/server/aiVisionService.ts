@@ -87,56 +87,30 @@ function isPlaceholder(value: string | undefined) {
   return !value || value.includes('[YOUR_') || value.includes('your-provider.example.com');
 }
 
-async function analyzeMomentImage(params: {
+/**
+ * 调用视觉模型（OpenAI 兼容格式），返回原始 JSON 解析结果。
+ * 抽象出共用逻辑，供 Qwen / MiniCPM-V 等不同 provider 复用。
+ */
+async function callVisionModel(params: {
+  endpoint: string;
+  apiKey: string;
+  model: string;
   imageDataUrl: string;
-  fileName: string;
-  momentText: string;
-  ocrText: string;
-  language: 'cn' | 'en';
+  prompt: string;
 }) {
-  const endpoint = process.env.MINICPM_V_API_URL ?? process.env.VLM_API_URL;
-  const apiKey = process.env.MINICPM_V_API_KEY ?? process.env.VLM_API_KEY;
-  const model = process.env.MINICPM_V_MODEL ?? process.env.VLM_MODEL ?? 'openbmb/MiniCPM-V-4_5';
-  if (isPlaceholder(endpoint) || isPlaceholder(apiKey)) throw new Error('Vision model API is not configured');
-  const configuredEndpoint = endpoint as string;
-  const configuredApiKey = apiKey as string;
-
-  const isCn = params.language === 'cn';
-  const prompt = isCn
-    ? [
-        '你是 Love Atlas 的关系场景理解模型。请观察图片，并结合用户补充文字和 OCR 文字，判断它对一次双人关系探索有什么意义。',
-        '只返回 JSON，不要 Markdown。格式：',
-        '{"tags":["daily"],"area":"valley","caption":"一句话描述图片场景","reason":"一句话说明为什么影响这个关系地图区域"}',
-        'area 只能是 forest/coast/valley/city/garden。',
-        'tags 只能从 daily/memory/emotion/future/conflict/moment/ocr-text/cafe/travel/home/gift/meal/chat/celebration 里选。',
-        `文件名：${params.fileName || '-'}`,
-        `用户补充：${params.momentText || '-'}`,
-        `OCR文字：${params.ocrText || '-'}`,
-      ].join('\n')
-    : [
-        'You are the relationship scene understanding model for Love Atlas. Observe the image and combine it with user note and OCR text.',
-        'Return JSON only, no Markdown. Format:',
-        '{"tags":["daily"],"area":"valley","caption":"one sentence image scene","reason":"one sentence explaining why it affects this relationship map area"}',
-        'area must be one of forest/coast/valley/city/garden.',
-        'tags must be chosen from daily/memory/emotion/future/conflict/moment/ocr-text/cafe/travel/home/gift/meal/chat/celebration.',
-        `File name: ${params.fileName || '-'}`,
-        `User note: ${params.momentText || '-'}`,
-        `OCR text: ${params.ocrText || '-'}`,
-      ].join('\n');
-
-  const apiResponse = await fetch(configuredEndpoint, {
+  const apiResponse = await fetch(params.endpoint, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${configuredApiKey}`,
+      authorization: `Bearer ${params.apiKey}`,
     },
     body: JSON.stringify({
-      model,
+      model: params.model,
       messages: [
         {
           role: 'user',
           content: [
-            { type: 'text', text: prompt },
+            { type: 'text', text: params.prompt },
             { type: 'image_url', image_url: { url: params.imageDataUrl } },
           ],
         },
@@ -154,8 +128,18 @@ async function analyzeMomentImage(params: {
   const data = await apiResponse.json() as { choices?: Array<{ message?: { content?: string } }> };
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error('Empty vision model response');
+  return extractJsonObject(content);
+}
 
-  const parsed = extractJsonObject(content);
+/**
+ * 解析视觉模型返回的 JSON，归一化为统一的 CloudMomentImageResult。
+ */
+function buildVisionResult(parsed: Record<string, unknown>, params: {
+  fileName: string;
+  momentText: string;
+  ocrText: string;
+  language: 'cn' | 'en';
+}): { tags: string[]; area: MapArea; caption: string; reason: string; source: 'cloud-vlm' | 'fallback' } {
   const tags = normalizeTags(parsed.tags);
   const caption = normalizeCaption(parsed.caption);
   const reason = typeof parsed.reason === 'string' ? parsed.reason.trim().slice(0, 240) : '';
@@ -178,6 +162,108 @@ async function analyzeMomentImage(params: {
     reason,
     source: 'cloud-vlm',
   };
+}
+
+function buildVisionPrompt(params: {
+  fileName: string;
+  momentText: string;
+  ocrText: string;
+  language: 'cn' | 'en';
+}) {
+  const isCn = params.language === 'cn';
+  return isCn
+    ? [
+        '你是 Love Atlas 的关系场景理解模型。请观察图片，并结合用户补充文字和 OCR 文字，判断它对一次双人关系探索有什么意义。',
+        '只返回 JSON，不要 Markdown。格式：',
+        '{"tags":["daily"],"area":"valley","caption":"一句话描述图片场景","reason":"一句话说明为什么影响这个关系地图区域"}',
+        'area 只能是 forest/coast/valley/city/garden。',
+        'tags 只能从 daily/memory/emotion/future/conflict/moment/ocr-text/cafe/travel/home/gift/meal/chat/celebration 里选。',
+        `文件名：${params.fileName || '-'}`,
+        `用户补充：${params.momentText || '-'}`,
+        `OCR文字：${params.ocrText || '-'}`,
+      ].join('\n')
+    : [
+        'You are the relationship scene understanding model for Love Atlas. Observe the image and combine it with user note and OCR text.',
+        'Return JSON only, no Markdown. Format:',
+        '{"tags":["daily"],"area":"valley","caption":"one sentence image scene","reason":"one sentence explaining why it affects this relationship map area"}',
+        'area must be one of forest/coast/valley/city/garden.',
+        'tags must be chosen from daily/memory/emotion/future/conflict/moment/ocr-text/cafe/travel/home/gift/meal/chat/celebration.',
+        `File name: ${params.fileName || '-'}`,
+        `User note: ${params.momentText || '-'}`,
+        `OCR text: ${params.ocrText || '-'}`,
+      ].join('\n');
+}
+
+/**
+ * 视觉识别链路：Qwen 首选 → MiniCPM-V 回退 → 启发式兜底。
+ * Qwen (qwen3.5-omni-plus-2026-03-15) 放在首个调用，失败时自动降级到 MiniCPM-V。
+ */
+async function analyzeMomentImage(params: {
+  imageDataUrl: string;
+  fileName: string;
+  momentText: string;
+  ocrText: string;
+  language: 'cn' | 'en';
+}) {
+  const prompt = buildVisionPrompt(params);
+  const buildParams = { fileName: params.fileName, momentText: params.momentText, ocrText: params.ocrText, language: params.language };
+
+  // 1. 首选：Qwen 视觉模型
+  const qwenEndpoint = process.env.QWEN_VISION_API_URL;
+  const qwenApiKey = process.env.QWEN_VISION_API_KEY;
+  const qwenModel = process.env.QWEN_VISION_MODEL ?? 'qwen3.5-omni-plus-2026-03-15';
+  if (!isPlaceholder(qwenEndpoint) && !isPlaceholder(qwenApiKey)) {
+    try {
+      // Qwen 兼容 OpenAI 格式，endpoint 通常是 base URL，需补 /chat/completions
+      const fullEndpoint = qwenEndpoint!.endsWith('/chat/completions')
+        ? qwenEndpoint!
+        : `${qwenEndpoint!.replace(/\/$/, '')}/chat/completions`;
+      const parsed = await callVisionModel({
+        endpoint: fullEndpoint,
+        apiKey: qwenApiKey as string,
+        model: qwenModel,
+        imageDataUrl: params.imageDataUrl,
+        prompt,
+      });
+      const result = buildVisionResult(parsed, buildParams);
+      if (result.source === 'cloud-vlm') {
+        console.log('[aiVision] qwen3.5-omni-plus-2026-03-15 succeeded');
+        return result;
+      }
+      // Qwen 返回了 fallback（caption/reason 为空），继续尝试 MiniCPM-V
+      console.warn('[aiVision] qwen returned fallback result, trying MiniCPM-V');
+    } catch (error) {
+      console.warn('[aiVision] qwen3.5-omni-plus-2026-03-15 failed, falling back to MiniCPM-V:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  // 2. 回退：MiniCPM-V
+  const minicpmEndpoint = process.env.MINICPM_V_API_URL ?? process.env.VLM_API_URL;
+  const minicpmApiKey = process.env.MINICPM_V_API_KEY ?? process.env.VLM_API_KEY;
+  const minicpmModel = process.env.MINICPM_V_MODEL ?? process.env.VLM_MODEL ?? 'openbmb/MiniCPM-V-4_5';
+  if (!isPlaceholder(minicpmEndpoint) && !isPlaceholder(minicpmApiKey)) {
+    try {
+      const parsed = await callVisionModel({
+        endpoint: minicpmEndpoint as string,
+        apiKey: minicpmApiKey as string,
+        model: minicpmModel,
+        imageDataUrl: params.imageDataUrl,
+        prompt,
+      });
+      const result = buildVisionResult(parsed, buildParams);
+      if (result.source === 'cloud-vlm') {
+        console.log('[aiVision] MiniCPM-V succeeded');
+        return result;
+      }
+      console.warn('[aiVision] MiniCPM-V returned fallback result');
+      return result;
+    } catch (error) {
+      console.warn('[aiVision] MiniCPM-V failed:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  // 3. 最终兜底：启发式推断
+  throw new Error('All vision models unavailable');
 }
 
 export async function handleAiVisionApi(request: IncomingMessage, response: ServerResponse) {
@@ -203,7 +289,8 @@ export async function handleAiVisionApi(request: IncomingMessage, response: Serv
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Vision image analysis failed';
-    console.error('[aiVision] cloud analysis failed:', message);
+    const stack = error instanceof Error ? error.stack : '';
+    console.error('[aiVision] cloud analysis failed:', message, stack);
     const fileName = typeof body.fileName === 'string' ? body.fileName : '';
     const momentText = typeof body.momentText === 'string' ? body.momentText : '';
     const ocrText = typeof body.ocrText === 'string' ? body.ocrText : '';
@@ -214,6 +301,9 @@ export async function handleAiVisionApi(request: IncomingMessage, response: Serv
       caption: '',
       reason: momentText ? '云端视觉暂不可用，已先根据文字和文件线索调整路线。' : '云端视觉暂不可用，已保留基础图片线索。',
       source: 'fallback',
+      // 暴露具体错误原因给前端，方便排查模型链路问题
+      error: message,
+      model: 'qwen3.5-omni-plus-2026-03-15',
     });
     return true;
   }

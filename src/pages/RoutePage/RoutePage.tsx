@@ -231,9 +231,15 @@ export function RoutePage() {
           weight: 0.84,
         },
       });
-      showAppliedHint(isCloudVision
-        ? (language === 'cn' ? '云端视觉理解已应用到路线' : 'Cloud vision applied to route')
-        : (cloudResult.reason || (language === 'cn' ? '图片里没有识别出足够清晰的场景信息，已保留基础图片线索' : 'No clear scene information was recognized, so basic image cues were kept')));
+      if (isCloudVision) {
+        showAppliedHint(language === 'cn' ? '云端视觉理解已应用到路线' : 'Cloud vision applied to route');
+      } else {
+        // fallback 时展示服务端返回的具体错误，方便用户/开发者定位模型链路问题
+        const fallbackReason = cloudResult.error
+          ? (language === 'cn' ? `图片场景目前无法解析：${cloudResult.error}` : `Image scene cannot be parsed: ${cloudResult.error}`)
+          : (cloudResult.reason || (language === 'cn' ? '图片里没有识别出足够清晰的场景信息，已保留基础图片线索' : 'No clear scene information was recognized, so basic image cues were kept'));
+        showAppliedHint(fallbackReason.slice(0, 120));
+      }
     } catch {
       // 云端视觉调用失败：明确提示目前无法解析，保留已上传图片的基础线索
       showAppliedHint(language === 'cn' ? '图片场景目前无法解析，已保留基础图片线索' : 'Image scene cannot be parsed right now, basic cues kept');

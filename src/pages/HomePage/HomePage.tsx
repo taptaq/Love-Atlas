@@ -96,7 +96,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       setSpaceAction('creating');
       setSpaceConnecting();
       setSessionConnecting();
-      const result = await createTemporarySpace(selectRelationshipSharedState(useJourneyStore.getState()));
+      const result = await createTemporarySpace(selectRelationshipSharedState(useJourneyStore.getState()), false, authUser?.id);
       enterSpace(result);
     } catch (error) {
       const message = friendlyError(error, language);
@@ -144,7 +144,7 @@ export function HomePage({ memberCount }: { memberCount: number }) {
       setSpaceAction('creating');
       setSpaceConnecting();
       setSessionConnecting();
-      const result = await createTemporarySpace(selectRelationshipSharedState(useJourneyStore.getState()), true);
+      const result = await createTemporarySpace(selectRelationshipSharedState(useJourneyStore.getState()), true, authUser?.id);
       enterSpace(result, true);
     } catch (error) {
       const message = friendlyError(error, language);

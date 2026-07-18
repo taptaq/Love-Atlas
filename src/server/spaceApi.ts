@@ -292,7 +292,9 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
       const participantId = String(body.participantId ?? '');
       const sharedState = body.sharedState ?? {};
       const companion = Boolean(body.companion);
-      const { space, exploration, legacySession } = await createSpaceWithExploration({ type: 'temporary', role: 'owner', companion, participantId, sharedState });
+      // 已登录用户创建临时空间时记录 userId，避免后续清空 localStorage / 换设备后无法匹配成员
+      const userId = resolveUserId(authUser, String(body.userId ?? '') || undefined);
+      const { space, exploration, legacySession } = await createSpaceWithExploration({ type: 'temporary', role: 'owner', companion, participantId, userId, sharedState });
       sendJson(response, 200, { space: normalizeSpace(space), exploration: normalizeExploration(exploration), session: normalizeLegacySession(legacySession), role: 'owner' });
       return true;
     }
@@ -427,13 +429,45 @@ export async function handleSpaceApi(request: IncomingMessage, response: ServerR
       const participantId = String(body.participantId ?? '') || undefined;
       const userId = requireUserId(authUser, String(body.userId ?? '') || undefined);
       const sharedState = body.sharedState ?? {};
-      const space = await prisma.relationshipSpace.findUnique({
+      let space = await prisma.relationshipSpace.findUnique({
         where: { id: spaceId },
         include: { members: { where: { status: 'active' } } },
       });
       if (!space) throw new Error('Space not found');
       if (space.type !== 'persistent') throw new Error('Only persistent spaces can create multiple explorations');
-      if (!space.members.some((member) => member.userId === userId || member.participantId === participantId)) throw new Error('Only active space members can create explorations');
+      // 历史遗留兜底：早期临时空间创建时未传 userId，导致升级后 member.userId 仍为 null。
+      // 当用户已登录但 member 记录缺 userId 时，尝试认领并补写 userId。
+      if (!space.members.some((member) => member.userId === userId || member.participantId === participantId)) {
+        let claimed = false;
+        if (userId) {
+          // 1) 优先按 participantId 认领（同浏览器但 member.userId 缺失的场景）
+          if (participantId) {
+            const r1 = await prisma.relationshipSpaceMember.updateMany({
+              where: { spaceId: space.id, participantId, status: 'active', userId: null },
+              data: { userId },
+            });
+            claimed = r1.count > 0;
+          }
+          // 2) 虚拟伴侣空间：只有一个真实成员，创建者可认领 userId 为空的成员
+          //    覆盖清空 localStorage / 换设备 / 换浏览器导致 participantId 对不上的场景
+          if (!claimed && space.companion && space.createdByUserId === userId) {
+            const r2 = await prisma.relationshipSpaceMember.updateMany({
+              where: { spaceId: space.id, status: 'active', userId: null },
+              data: { userId },
+            });
+            claimed = r2.count > 0;
+          }
+          if (claimed) {
+            space = await prisma.relationshipSpace.findUnique({
+              where: { id: spaceId },
+              include: { members: { where: { status: 'active' } } },
+            });
+          }
+        }
+        if (!space || !space.members.some((member) => member.userId === userId || member.participantId === participantId)) {
+          throw new Error('Only active space members can create explorations');
+        }
+      }
 
       const legacySessionId = createLegacySessionId();
       const relationshipStage = readSharedValue(sharedState, 'relationshipStage');

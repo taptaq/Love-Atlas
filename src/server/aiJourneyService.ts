@@ -491,7 +491,7 @@ async function generateTheme(body: ApiBody) {
     'Return JSON only with this format:',
     '{"icon":"🌙","title":{"cn":"中文标题（4-8字）","en":"English title (2-5 words)"},"description":{"cn":"中文描述（20-40字，温暖具体）","en":"English description (15-30 words)"},"goal":"deep","stage":"long-term","momentText":{"cn":"中文此刻场景（15-30字）","en":"English moment scene (10-20 words)"},"accent":"mist"}',
     'goal must be one of: know, icebreak, common, connect, fresh, deep, habit, needs, review, sync, miss, future.',
-    'stage must be one of: new, dating, long-term, long-distance.',
+    'stage must be one of: new, ambiguous, dating, long-term, long-distance, reconnect.',
     'accent must be one of: rose, mist, amber, teal.',
     'icon must be a single emoji that matches the theme mood.',
     'Do NOT repeat themes from history. Pick a fresh angle based on their stage and world progress.',
@@ -505,11 +505,11 @@ async function generateTheme(body: ApiBody) {
   const parsed = await callDeepSeekJson(prompt, 500);
 
   const VALID_GOALS = ['know', 'icebreak', 'common', 'connect', 'fresh', 'deep', 'habit', 'needs', 'review', 'sync', 'miss', 'future'];
-  const VALID_STAGES = ['new', 'dating', 'long-term', 'long-distance'];
+  const VALID_STAGES = ['new', 'ambiguous', 'dating', 'long-term', 'long-distance', 'reconnect'];
   const VALID_ACCENTS = ['rose', 'mist', 'amber', 'teal'];
 
   const goal = typeof parsed.goal === 'string' && VALID_GOALS.includes(parsed.goal) ? parsed.goal : 'deep';
-  const themeStage = typeof parsed.stage === 'string' && VALID_STAGES.includes(parsed.stage) ? parsed.stage : 'long-term';
+  const themeStage = typeof parsed.stage === 'string' && VALID_STAGES.includes(parsed.stage) ? parsed.stage : 'new';
   const accent = typeof parsed.accent === 'string' && VALID_ACCENTS.includes(parsed.accent) ? parsed.accent : 'mist';
   const icon = asString(parsed.icon, '🎁').slice(0, 4);
 

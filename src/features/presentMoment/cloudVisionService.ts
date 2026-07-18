@@ -6,6 +6,8 @@ export interface CloudMomentImageResult {
   caption: string;
   reason: string;
   source: 'cloud-vlm' | 'fallback';
+  error?: string;
+  model?: string;
 }
 
 export async function analyzeMomentImageWithCloud(params: {

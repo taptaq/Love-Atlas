@@ -27,13 +27,24 @@ export const useAuthStore = create<AuthStore>((set) => ({
     set({ status: 'loading', error: '' });
     const { data, error } = await supabase.auth.getSession();
     if (error) {
-      set({ user: null, status: 'error', error: error.message });
+      // refresh_token 失效会导致 getSession 报错：主动清理 stale session，避免客户端反复重试刷新
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // 忽略清理失败
+      }
+      set({ user: null, status: 'anonymous', error: '' });
       return;
     }
     set({ user: data.session?.user ?? null, status: data.session?.user ? 'authenticated' : 'anonymous', error: '' });
     if (!authListenerStarted) {
       authListenerStarted = true;
-      supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.auth.onAuthStateChange((event, session) => {
+        // 刷新失败时 Supabase 会触发 SIGNED_OUT，此时确保本地 stale token 被清掉
+        if (event === 'SIGNED_OUT') {
+          set({ user: null, status: 'anonymous', error: '' });
+          return;
+        }
         set({ user: session?.user ?? null, status: session?.user ? 'authenticated' : 'anonymous', error: '' });
       });
     }

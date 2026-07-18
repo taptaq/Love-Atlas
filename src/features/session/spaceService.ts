@@ -63,9 +63,9 @@ async function readErrorMessage(response: Response) {
   return text || `Request failed with status ${response.status}`;
 }
 
-export async function createTemporarySpace(sharedState: RelationshipSharedState, companion = false) {
+export async function createTemporarySpace(sharedState: RelationshipSharedState, companion = false, userId?: string) {
   const participantId = createParticipantId();
-  return postJson<SpaceApiResult>('/api/spaces/create-temporary', { participantId, companion, sharedState });
+  return postJson<SpaceApiResult>('/api/spaces/create-temporary', { participantId, companion, sharedState, userId });
 }
 
 export async function createPersistentSpace(sharedState: RelationshipSharedState, userId: string, companion = false) {
