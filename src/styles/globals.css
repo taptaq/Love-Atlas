@@ -41,6 +41,26 @@
 html, body {
   height: 100%;
   overflow: hidden;
+  /* 禁止移动端双击缩放和捏合缩放，保留单击和滚动 */
+  touch-action: manipulation;
+  /* 禁止 iOS Safari 文本大小自动调整（横竖屏切换时不放大） */
+  -webkit-text-size-adjust: 100%;
+  /* 禁止用户选中文本（避免长按触发系统菜单/放大镜） */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 输入控件单独允许选中（用户需要在输入框内编辑文本） */
+input, textarea, select, [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  /* iOS Safari 聚焦时若字体小于 16px 会自动放大页面，强制 16px 起步 */
+  font-size: 16px;
+}
+
+/* 禁止移动端长按图片/链接弹出系统菜单（可能会被识别为放大手势） */
+img, a {
+  -webkit-touch-callout: none;
 }
 
 body {
@@ -2862,6 +2882,22 @@ button {
   transform: none;
 }
 
+/* 步骤锁提示：一方已按"继续"按钮后，对方看到的等待提示 */
+.step-lock-hint {
+  margin: 16px auto 0;
+  padding: 12px 18px;
+  width: fit-content;
+  max-width: 100%;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.78);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.18), rgba(216, 180, 254, 0.1));
+  border: 1px solid rgba(216, 180, 254, 0.32);
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -5486,4 +5522,105 @@ button {
 [data-theme='light'] .area-badge {
   color: #8b6f8a;
 }
+
+/* 轻量 toast（顶部居中，几秒后自动消失） */
+.toast-stack,
+.error-toast-stack {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  width: min(360px, 86vw);
+  pointer-events: none;
+  animation: toastSlideIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.toast-card,
+.error-toast-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border: 1px solid rgba(252, 165, 165, 0.28);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(160deg, rgba(60, 24, 36, 0.96), rgba(40, 16, 24, 0.96));
+  backdrop-filter: blur(18px);
+  box-shadow:
+    0 16px 42px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(248, 113, 113, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: #fee2e2;
+  pointer-events: auto;
+}
+
+/* 信息提示 toast：柔雾紫 / 月光调 */
+.info-toast-card {
+  border-color: rgba(196, 181, 253, 0.32);
+  background: linear-gradient(160deg, rgba(36, 32, 66, 0.96), rgba(24, 22, 46, 0.96));
+  box-shadow:
+    0 16px 42px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(167, 139, 250, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.toast-icon,
+.error-toast-icon {
+  flex-shrink: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.toast-message,
+.error-toast-message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #fee2e2;
+  text-align: left;
+}
+
+.info-toast-message {
+  color: #ede9fe;
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* 错误提示 toast - 亮色主题 */
+[data-theme='light'] .toast-card,
+[data-theme='light'] .error-toast-card {
+  background: linear-gradient(160deg, rgba(255, 252, 253, 0.98), rgba(255, 240, 243, 0.98));
+  border-color: rgba(244, 63, 94, 0.22);
+  box-shadow:
+    0 16px 42px rgba(107, 79, 122, 0.14),
+    0 0 0 1px rgba(244, 63, 94, 0.08);
+}
+
+[data-theme='light'] .info-toast-card {
+  background: linear-gradient(160deg, rgba(250, 248, 255, 0.98), rgba(243, 240, 255, 0.98));
+  border-color: rgba(139, 92, 246, 0.22);
+  box-shadow:
+    0 16px 42px rgba(107, 79, 122, 0.14),
+    0 0 0 1px rgba(139, 92, 246, 0.08);
+}
+
+[data-theme='light'] .toast-message,
+[data-theme='light'] .error-toast-message {
+  color: #9f1239;
+}
+
+[data-theme='light'] .info-toast-message {
+  color: #5b21b6;
+}
+
 

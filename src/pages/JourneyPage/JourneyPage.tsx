@@ -54,9 +54,17 @@ export function JourneyPage() {
   const layerCompanionTriggeredRef = useRef(false);
 
   // 双方都 ready 时自动揭晓
+  // 主导方模型：只有 host 触发 revealAnswers（避免双方同时触发重复 AI 调用）
+  // partner 等待同步过来的 revealStage 状态，实时看到揭晓仪式
   const autoRevealTriggered = useRef(false);
   useEffect(() => {
     if (abAnswers.answerAReady && abAnswers.answerBReady && !abAnswers.revealVisible && !autoRevealTriggered.current) {
+      // partner 不主动触发揭晓，等待 host 同步过来的 revealStage
+      if (isPartner) {
+        autoRevealTriggered.current = true;
+        return;
+      }
+      // host / solo 触发揭晓
       autoRevealTriggered.current = true;
       void revealAnswers();
     }
@@ -65,9 +73,10 @@ export function JourneyPage() {
       autoRevealTriggered.current = false;
       companionTriggeredRef.current = false;
     }
-  }, [abAnswers.answerAReady, abAnswers.answerBReady, abAnswers.revealVisible, revealAnswers]);
+  }, [abAnswers.answerAReady, abAnswers.answerBReady, abAnswers.revealVisible, revealAnswers, isPartner]);
 
   // 深度对话：双方都 ready 时自动揭晓当前层
+  // 主导方模型：只有 host 触发 revealLayer，partner 等待同步
   const layerAutoRevealRef = useRef(false);
   useEffect(() => {
     if (dialogueDepth === 0) {
@@ -79,13 +88,15 @@ export function JourneyPage() {
     if (!currentLayer) return;
     if (currentLayer.answerAReady && currentLayer.answerBReady && !currentLayer.revealVisible && !layerAutoRevealRef.current) {
       layerAutoRevealRef.current = true;
+      // partner 不主动触发揭晓，等待 host 同步
+      if (isPartner) return;
       void revealLayer();
     }
     if (!currentLayer.answerAReady && !currentLayer.answerBReady) {
       layerAutoRevealRef.current = false;
       layerCompanionTriggeredRef.current = false;
     }
-  }, [dialogueDepth, dialogueChain, revealLayer]);
+  }, [dialogueDepth, dialogueChain, revealLayer, isPartner]);
 
   // 深度对话：虚拟伴侣模式自动回答（伴侣始终回答对方角色）
   useEffect(() => {
@@ -568,8 +579,9 @@ export function JourneyPage() {
               </section>
             )}
 
-            {/* 深度对话操作按钮 */}
-            {currentLayer.revealVisible && (
+            {/* 深度对话操作按钮
+                主导方模型：只 host 显示"继续/返回/生成总结"按钮，partner 等待 host 同步 */}
+            {currentLayer.revealVisible && !isPartner && (
               <div className="deep-dialogue-actions">
                 {dialogueDepth < 3 ? (
                   <>
@@ -587,6 +599,17 @@ export function JourneyPage() {
                 )}
               </div>
             )}
+
+            {/* partner 等待 host 操作的提示 */}
+            {currentLayer.revealVisible && isPartner && (
+              <div className="deep-dialogue-actions">
+                <p className="deep-dialogue-hint">
+                  {dialogueDepth < 3
+                    ? (cn ? '⏳ 等待对方选择是否继续深度对话…' : '⏳ Waiting for partner to continue or exit deep dialogue…')
+                    : (cn ? '⏳ 等待对方生成深度对话总结…' : '⏳ Waiting for partner to generate summary…')}
+                </p>
+              </div>
+            )}
           </section>
         );
       })()}
@@ -601,8 +624,9 @@ export function JourneyPage() {
       )}
 
       {/* 深度对话入口按钮（原题揭晓后，未开启深度对话时）
-          阈值按关系阶段差异化：new/ambiguous/reconnect 放宽到 <45 或 ≥60，其余 <35 或 ≥60 */}
-      {abAnswers.revealStage === 'complete' && dialogueDepth === 0 && !dialogueSummary && !isGeneratingFollowup && shouldTriggerDeepDialogue(abAnswers.similarity, relationshipStage) !== null && (
+          阈值按关系阶段差异化：new/ambiguous/reconnect 放宽到 <45 或 ≥60，其余 <35 或 ≥60
+          主导方模型：只 host 显示入口按钮，partner 等待 host 触发后同步过来 */}
+      {abAnswers.revealStage === 'complete' && dialogueDepth === 0 && !dialogueSummary && !isGeneratingFollowup && shouldTriggerDeepDialogue(abAnswers.similarity, relationshipStage) !== null && !isPartner && (
         <div className="deep-dialogue-entry">
           <button className="secondary-btn deep-dialogue-btn" type="button" disabled={isGeneratingFollowup} onClick={() => void startDeepDialogue()}>
             {shouldTriggerDeepDialogue(abAnswers.similarity, relationshipStage) === 'high'
@@ -613,6 +637,17 @@ export function JourneyPage() {
             {shouldTriggerDeepDialogue(abAnswers.similarity, relationshipStage) === 'high'
               ? (cn ? '你们的答案产生了共鸣，可以继续深化这份连接（最多 3 层）' : 'Your answers resonated — deepen this connection (up to 3 layers)')
               : (cn ? '你们从不同角度回应了这题，可以继续深挖背后的故事（最多 3 层）' : 'Your answers came from different angles — go deeper into the story behind (up to 3 layers)')}
+          </p>
+        </div>
+      )}
+
+      {/* partner 看到深度对话触发提示，等待 host 生成 */}
+      {abAnswers.revealStage === 'complete' && dialogueDepth === 0 && !dialogueSummary && !isGeneratingFollowup && shouldTriggerDeepDialogue(abAnswers.similarity, relationshipStage) !== null && isPartner && (
+        <div className="deep-dialogue-entry">
+          <p className="deep-dialogue-hint">
+            {shouldTriggerDeepDialogue(abAnswers.similarity, relationshipStage) === 'high'
+              ? (cn ? '✨ 你们的答案产生了共鸣，等待对方开启深度对话…' : '✨ Your answers resonated — waiting for partner to start deep dialogue…')
+              : (cn ? '🔗 你们从不同角度回应了这题，等待对方开启深度对话…' : '🔗 Your answers came from different angles — waiting for partner to start deep dialogue…')}
           </p>
         </div>
       )}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { requestAuthPopover } from '../../components/auth/AuthButton';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 // import { DailyQuestion } from '../../components/ui/DailyQuestion'; // 今日一问：暂时下线
+import { ErrorToast } from '../../components/ui/ErrorToast';
 import { LoadingOverlay } from '../../components/ui/LoadingOverlay';
 import { SpaceOnboarding } from '../../components/ui/SpaceOnboarding';
 import { TermTooltip } from '../../components/ui/TermTooltip';
@@ -31,7 +32,11 @@ export function HomePage({ memberCount }: { memberCount: number }) {
   const session = useSessionStore((store) => store.session);
   const setSession = useSessionStore((store) => store.setSession);
   const setSessionConnecting = useSessionStore((store) => store.setConnecting);
+  const sessionError = useSessionStore((store) => store.error);
   const setSessionError = useSessionStore((store) => store.setError);
+  // 主导方模型：只有 host 可点击"开启探索"，partner 禁用并跟随同步
+  const sessionRole = useSessionStore((store) => store.role);
+  const isFollower = sessionRole === 'partner';
   const space = useSpaceStore((store) => store.space);
   const spaceStatus = useSpaceStore((store) => store.status);
   const spaceError = useSpaceStore((store) => store.error);
@@ -47,9 +52,9 @@ export function HomePage({ memberCount }: { memberCount: number }) {
   const [explorations, setExplorations] = useState<ExplorationSession[]>([]);
   const [explorationsLoading, setExplorationsLoading] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
-  const [summaryNotice, setSummaryNotice] = useState('');
   const [spaceAction, setSpaceAction] = useState<'creating' | 'leaving' | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<'leave' | 'unbind' | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant: 'error' | 'info' } | null>(null);
   const hasSpace = Boolean(space && session);
   const isTemporarySpace = space?.type === 'temporary';
   const isPersistentSpace = space?.type === 'persistent';
@@ -309,8 +314,10 @@ export function HomePage({ memberCount }: { memberCount: number }) {
 
   const handleViewSummary = () => {
     if (!summaryResonance && journeyHistoryLength === 0) {
-      setSummaryNotice(language === 'cn' ? '还没有可查看的总结，请先完成一次探索。' : 'No summary yet. Please complete an exploration first.');
-      window.setTimeout(() => setSummaryNotice(''), 3000);
+      setToast({
+        message: language === 'cn' ? '还没有可查看的总结，请先完成一次探索。' : 'No summary yet. Please complete an exploration first.',
+        variant: 'info',
+      });
       return;
     }
     goToStep('summary');
@@ -333,8 +340,27 @@ export function HomePage({ memberCount }: { memberCount: number }) {
   //   });
   // };
 
+  // 错误提示：统一以顶部 toast 形式展示，3.5 秒后自动消失
+  useEffect(() => {
+    const message = spaceError || sessionError;
+    if (!message) return;
+    const friendly = friendlyError(message, language);
+    setToast({ message: friendly, variant: 'error' });
+    // 清除 store 里的错误，避免重复触发
+    setSpaceError('');
+    setSessionError('');
+  }, [spaceError, sessionError, language, setSpaceError, setSessionError]);
+
   return (
-    <main className="page home-page space-home-page">
+    <>
+      {toast && (
+        <ErrorToast
+          message={toast.message}
+          variant={toast.variant}
+          onClose={() => setToast(null)}
+        />
+      )}
+      <main className="page home-page space-home-page">
       <LoadingOverlay
         visible={spaceStatus === 'connecting'}
         message={spaceAction === 'leaving'
@@ -432,8 +458,10 @@ export function HomePage({ memberCount }: { memberCount: number }) {
                         ? (cn ? '✓ 已加入空间，可以开启探索' : '✓ Joined, ready to explore')
                         : (cn ? '⏳ 已加入空间，等待对方上线…' : '⏳ Joined, waiting for partner to come online…'))}
               </div>
-              <button className="primary-btn" type="button" onClick={handleStartExploration} disabled={!partnerJoined && !isCompanion}>
-                {isTemporarySpace ? (language === 'cn' ? '开启本次探索' : 'Start This Exploration') : (language === 'cn' ? '开启新的探索' : 'Start a New Exploration')}
+              <button className="primary-btn" type="button" onClick={handleStartExploration} disabled={isFollower || (!partnerJoined && !isCompanion)}>
+                {isFollower
+                  ? (cn ? '⏳ 等待对方开启探索…' : '⏳ Waiting for partner to start exploration…')
+                  : (isTemporarySpace ? (cn ? '开启本次探索' : 'Start This Exploration') : (cn ? '开启新的探索' : 'Start a New Exploration'))}
               </button>
               {isTemporarySpace && spaceRole === 'owner' && (
                 <>
@@ -498,17 +526,19 @@ export function HomePage({ memberCount }: { memberCount: number }) {
           )}
 
           {spaceStatus === 'connecting' && <small>{language === 'cn' ? '正在连接关系空间…' : 'Connecting relationship space…'}</small>}
-          {spaceError && <small className="session-error">{friendlyError(spaceError)}</small>}
         </article>
 
         {hasSpace && isTemporarySpace && (
           <aside className="space-secondary-card">
             <span className="eyebrow">{language === 'cn' ? '临时空间' : 'Temporary Space'}</span>
             <p>{language === 'cn' ? '临时空间只保留一次探索所需的轻量功能，不展示长期地图、历史发现和累计统计。' : 'Temporary spaces keep only the lightweight one-time flow, without long-term maps, history, or stats.'}</p>
-            <button type="button" onClick={handleStartExploration}>{language === 'cn' ? '开启本次探索' : 'Start This Exploration'}</button>
+            <button type="button" onClick={handleStartExploration} disabled={isFollower}>
+              {isFollower ? (language === 'cn' ? '⏳ 等待对方开启探索…' : '⏳ Waiting for partner to start exploration…') : (language === 'cn' ? '开启本次探索' : 'Start This Exploration')}
+            </button>
             <button type="button" onClick={handleViewSummary}>{language === 'cn' ? '查看本次总结' : 'View This Summary'}</button>
-            {summaryNotice && <small className="session-error">{summaryNotice}</small>}
-            <button type="button" onClick={handleUpgradeTemporarySpace}>{language === 'cn' ? '升级为专属空间' : 'Upgrade to Private Space'}</button>
+            {!isFollower && (
+              <button type="button" onClick={handleUpgradeTemporarySpace}>{language === 'cn' ? '升级为专属空间' : 'Upgrade to Private Space'}</button>
+            )}
           </aside>
         )}
 
@@ -523,7 +553,9 @@ export function HomePage({ memberCount }: { memberCount: number }) {
               <span>{t(language, 'stepMirror')}</span>
               <span>{t(language, 'stepSummary')}</span>
             </div>
-            <button type="button" onClick={handleStartExploration}>{t(language, 'startNewExploration')}</button>
+            <button type="button" onClick={handleStartExploration} disabled={isFollower}>
+              {isFollower ? (cn ? '⏳ 等待对方开启探索…' : '⏳ Waiting for partner to start exploration…') : t(language, 'startNewExploration')}
+            </button>
             <button type="button" onClick={() => goToStep('world')}>{t(language, 'worldTitle')}</button>
             <button type="button" onClick={() => goToStep('discoveryAtlas')}>
               {latest ? `${t(language, 'latestDiscovery')} · ${latestCopy?.title}` : t(language, 'emptyDiscovery')}
@@ -546,5 +578,6 @@ export function HomePage({ memberCount }: { memberCount: number }) {
         </footer>
       )}
     </main>
+    </>
   );
 }

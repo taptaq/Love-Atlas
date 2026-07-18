@@ -33,6 +33,12 @@ export function selectRelationshipSharedState(state: JourneyStoreState): Relatio
     currentQuestion: state.currentQuestion,
     journeyHistory: state.journeyHistory,
     events: state.events,
+    // 情绪签到由 host 主导，同步给 partner 保证第一题方向一致
+    currentMood: state.currentMood,
+    // 深度对话状态同步：host 触发生成后，partner 通过同步看到追问题目
+    dialogueDepth: state.dialogueDepth,
+    dialogueChain: state.dialogueChain,
+    dialogueSummary: state.dialogueSummary,
   };
 }
 
@@ -174,9 +180,9 @@ export function useRelationshipSessionSync() {
       )
       .subscribe();
 
-    // 3. 自适应轮询：有活动时 300ms 快速同步，空闲时 2000ms 省资源
+    // 3. 自适应轮询：有活动时 200ms 快速同步，空闲时 1500ms 省资源
     let pollTimeoutId: number | undefined;
-    let nextDelay = 2000;
+    let nextDelay = 1500;
     const poll = () => {
       pollTimeoutId = window.setTimeout(async () => {
         const wasActive = activityRef.current > 0;
@@ -203,7 +209,7 @@ export function useRelationshipSessionSync() {
             useUiStore.getState().setSyncStatus('error');
           }
         }
-        nextDelay = activityRef.current > 0 || wasActive ? 300 : 2000;
+        nextDelay = activityRef.current > 0 || wasActive ? 200 : 1500;
         poll();
       }, nextDelay);
     };

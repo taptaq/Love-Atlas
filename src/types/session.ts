@@ -16,6 +16,10 @@ export type RelationshipSharedState = Pick<
   | 'currentQuestion'
   | 'journeyHistory'
   | 'events'
+  | 'currentMood'
+  | 'dialogueDepth'
+  | 'dialogueChain'
+  | 'dialogueSummary'
 > & {
   abInteraction: JourneyStoreState['abAnswers'];
   mapState: JourneyStoreState['worldState'];

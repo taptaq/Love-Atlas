@@ -668,6 +668,8 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
     if (isLocalAtHome || (incomingStepIndex >= 0 && incomingStepIndex < localStepIndex)) {
       incoming.currentStep = state.currentStep;
     }
+    // 主导方模型：host 负责设置阶段/目标/路线，partner 只接收同步
+    // partner 本地不会写入这些字段，所以直接接受 host 同步过来的值即可
     // 智能合并 abAnswers：保留本地答案，只更新对方的答案和 ready 标识
     if (incoming.abAnswers) {
       const incomingAb = incoming.abAnswers;
@@ -677,15 +679,68 @@ export const useJourneyStore = create<JourneyStore>((set, get) => ({
         incoming.abAnswers = { ...incomingAb };
       } else {
         // 未揭晓：保留本地答案文本，只同步 ready 标识
+        const mergedReadyA = incomingAb.answerAReady ?? localAb.answerAReady;
+        const mergedReadyB = incomingAb.answerBReady ?? localAb.answerBReady;
+        const bothReadyNow = mergedReadyA && mergedReadyB;
         incoming.abAnswers = {
           ...localAb,
-          answerAReady: incomingAb.answerAReady ?? localAb.answerAReady,
-          answerBReady: incomingAb.answerBReady ?? localAb.answerBReady,
+          answerAReady: mergedReadyA,
+          answerBReady: mergedReadyB,
           // 如果对方同步了答案（双方都 ready 时），接受对方的答案
           answerA: incomingAb.answerA || localAb.answerA,
           answerB: incomingAb.answerB || localAb.answerB,
+          // 双方都 ready 后，同步揭晓阶段状态（anticipating/revealing_answer/revealing_similarity/complete）
+          // 这样对方能实时看到揭晓仪式，而不是等到 revealVisible=true 才同步
+          revealStage: bothReadyNow ? (incomingAb.revealStage ?? localAb.revealStage) : localAb.revealStage,
+          revealVisible: bothReadyNow ? (incomingAb.revealVisible || localAb.revealVisible) : localAb.revealVisible,
+          similarity: bothReadyNow ? (incomingAb.similarity ?? localAb.similarity) : localAb.similarity,
+          intensity: bothReadyNow ? (incomingAb.intensity ?? localAb.intensity) : localAb.intensity,
+          insights: bothReadyNow ? (incomingAb.insights ?? localAb.insights) : localAb.insights,
         };
       }
+    }
+    // 深度对话合并：host 生成追问后同步给 partner
+    // 合并规则：
+    // - dialogueDepth：接受 host 的值（host 主导深度推进）
+    // - dialogueSummary：接受 host 的值（host 主导总结生成）
+    // - dialogueChain：按层合并——保留本地的答案/ready，接受 host 的题目和揭晓状态
+    if (incoming.dialogueChain) {
+      const incomingChain = incoming.dialogueChain;
+      const localChain = state.dialogueChain;
+      // 本地链更长（partner 已答题但 host 还没同步），保留本地更长部分
+      const mergedChain = incomingChain.map((incomingLayer, idx) => {
+        const localLayer = localChain[idx];
+        if (!localLayer) {
+          // 本地没有这一层，直接接受 host 同步过来的
+          return incomingLayer;
+        }
+        // 本地有这一层：保留本地答案/ready，接受 host 的题目和揭晓状态
+        // 但如果 host 同步过来的是揭晓后的状态（revealVisible=true），接受全部
+        if (incomingLayer.revealVisible) {
+          return { ...incomingLayer };
+        }
+        // 未揭晓：保留本地答案和 ready 标识，接受 host 的题目
+        const bothLayerReady = (incomingLayer.answerAReady ?? localLayer.answerAReady) && (incomingLayer.answerBReady ?? localLayer.answerBReady);
+        return {
+          ...localLayer,
+          question: incomingLayer.question, // 题目由 host 生成，接受
+          depth: incomingLayer.depth,
+          // 答案合并：保留本地，同步对方 ready
+          answerAReady: incomingLayer.answerAReady ?? localLayer.answerAReady,
+          answerBReady: incomingLayer.answerBReady ?? localLayer.answerBReady,
+          answerA: incomingLayer.answerA || localLayer.answerA,
+          answerB: incomingLayer.answerB || localLayer.answerB,
+          // 双方都 ready 后同步揭晓状态
+          revealVisible: bothLayerReady ? (incomingLayer.revealVisible || localLayer.revealVisible) : localLayer.revealVisible,
+          similarity: bothLayerReady ? (incomingLayer.similarity ?? localLayer.similarity) : localLayer.similarity,
+          insights: bothLayerReady ? (incomingLayer.insights ?? localLayer.insights) : localLayer.insights,
+        };
+      });
+      // 本地链比 incoming 长（partner 答题但 host 还没同步），保留本地额外层
+      if (localChain.length > incomingChain.length) {
+        mergedChain.push(...localChain.slice(incomingChain.length));
+      }
+      incoming.dialogueChain = mergedChain;
     }
     return incoming;
   }),

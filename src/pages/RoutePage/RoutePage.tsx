@@ -58,6 +58,7 @@ export function RoutePage() {
   const setRoute = useJourneyStore((state) => state.setRoute);
   const presentMoment = useJourneyStore((state) => state.presentMoment);
   const sessionId = useSessionStore((state) => state.session?.id);
+  const sessionRole = useSessionStore((state) => state.role);
   const applyPresentMoment = useJourneyStore((state) => state.applyPresentMoment);
   const startJourney = useJourneyStore((state) => state.startJourney);
   const isStartingJourney = useJourneyStore((state) => state.isStartingJourney);
@@ -74,9 +75,35 @@ export function RoutePage() {
   const [imageAnalyzing, setImageAnalyzing] = useState(false);
   const stage = getStageOption(relationshipStage);
   const goalOption = getGoalOption(goal);
+  const cn = language === 'cn';
+  // 主导方模型：host 负责生成 AI 路线和开始旅程，partner 完全跟随
+  const isFollower = sessionRole === 'partner';
 
-  // AI 生成路线，失败时用固定组合兜底；生成后同步写入 store，确保 summary 取到的是用户实际看到的路线
+  // AI 生成路线：只有 host 触发生成，partner 等待同步过来的 AI 路线
+  // 避免双方各自生成不同路线后互相覆盖（DeepSeek temperature 0.7 会产生不同结果）
+  // partner 进入时：如果 store.route 已经是 AI 生成，直接使用，不调 API
   useEffect(() => {
+    // partner 模式：如果 store 里已经有 host 生成的 AI 路线，直接采用，不重新生成
+    if (sessionRole === 'partner' && route.generatedBy === 'ai' && route.areas.length > 0) {
+      setAiRouteAreas(route.areas);
+      setAiRouteReason(typeof route.reason === 'string' ? route.reason : route.reason?.cn ?? '');
+      setAiFallback(false);
+      setAiLoading(false);
+      return;
+    }
+    // partner 模式且 host 还没生成路线：显示等待状态，不调 API
+    if (sessionRole === 'partner') {
+      setAiLoading(true);
+      return;
+    }
+    // host 模式：触发生成（如果还没生成过）
+    if (route.generatedBy === 'ai' && route.areas.length > 0) {
+      setAiRouteAreas(route.areas);
+      setAiRouteReason(typeof route.reason === 'string' ? route.reason : route.reason?.cn ?? '');
+      setAiFallback(false);
+      setAiLoading(false);
+      return;
+    }
     let cancelled = false;
     setAiLoading(true);
     generateAiRoute({ stage: relationshipStage, goal, language })
@@ -104,7 +131,18 @@ export function RoutePage() {
       cancelled = true;
       window.clearTimeout(appliedHintTimer.current);
     };
-  }, [relationshipStage, goal, language, setRoute]);
+  }, [relationshipStage, goal, language, setRoute, sessionRole, route.generatedBy, route.areas, route.reason]);
+
+  // partner 收到 host 同步过来的 AI 路线时，同步更新本地 UI
+  useEffect(() => {
+    if (sessionRole !== 'partner') return;
+    if (route.generatedBy === 'ai' && route.areas.length > 0) {
+      setAiRouteAreas(route.areas);
+      setAiRouteReason(typeof route.reason === 'string' ? route.reason : route.reason?.cn ?? '');
+      setAiFallback(false);
+      setAiLoading(false);
+    }
+  }, [sessionRole, route.generatedBy, route.areas, route.reason]);
 
   const routeAreas = aiRouteAreas ?? (route.areas.length > 0 ? route.areas : goalOption ? [goalOption.primaryArea] : []);
   const routeReason = aiRouteReason || (typeof route.reason === 'string' ? route.reason : route.reason?.[language]);
@@ -343,22 +381,22 @@ export function RoutePage() {
         <h2>{language === 'cn' ? '此刻信息是可选的' : 'Present moment is optional'}</h2>
         <p>{language === 'cn' ? '可以直接开始，也可以选择一种方式补充当前情境。' : 'You can begin directly, or add context in one lightweight way.'}</p>
         <div className="moment-action-grid">
-          <button className={activeMomentAction === 'none' ? 'selected' : ''} type="button" onClick={skipMoment}>
+          <button className={activeMomentAction === 'none' ? 'selected' : ''} type="button" disabled={isFollower} onClick={skipMoment}>
             <span>✨</span>
             <strong>{language === 'cn' ? '暂不补充' : 'Skip for now'}</strong>
             <small>{language === 'cn' ? '直接使用当前路线' : 'Use the route as is'}</small>
           </button>
-          <button className={activeMomentAction === 'scene' ? 'selected' : ''} type="button" onClick={() => { clearMomentHint(); applyPresentMoment({ imageOcrStatus: 'idle', imageOcrText: '', imageOcrConfidence: null }); setActiveMomentAction('scene'); }}>
+          <button className={activeMomentAction === 'scene' ? 'selected' : ''} type="button" disabled={isFollower} onClick={() => { clearMomentHint(); applyPresentMoment({ imageOcrStatus: 'idle', imageOcrText: '', imageOcrConfidence: null }); setActiveMomentAction('scene'); }}>
             <span>📍</span>
             <strong>{language === 'cn' ? '选择场景' : 'Choose scene'}</strong>
             <small>{language === 'cn' ? '用所在场景修正路线' : 'Shape the route by place'}</small>
           </button>
-          <button className={activeMomentAction === 'text' ? 'selected' : ''} type="button" onClick={() => { clearMomentHint(); applyPresentMoment({ imageOcrStatus: 'idle', imageOcrText: '', imageOcrConfidence: null }); setActiveMomentAction('text'); }}>
+          <button className={activeMomentAction === 'text' ? 'selected' : ''} type="button" disabled={isFollower} onClick={() => { clearMomentHint(); applyPresentMoment({ imageOcrStatus: 'idle', imageOcrText: '', imageOcrConfidence: null }); setActiveMomentAction('text'); }}>
             <span>✍️</span>
             <strong>{language === 'cn' ? '写一句话' : 'Write a note'}</strong>
             <small>{language === 'cn' ? '记录刚刚发生的事' : 'Capture what just happened'}</small>
           </button>
-          <button className={activeMomentAction === 'image' ? 'selected' : ''} type="button" onClick={() => { clearMomentHint(); setActiveMomentAction('image'); }}>
+          <button className={activeMomentAction === 'image' ? 'selected' : ''} type="button" disabled={isFollower} onClick={() => { clearMomentHint(); setActiveMomentAction('image'); }}>
             <span>🖼️</span>
             <strong>{language === 'cn' ? '上传图片' : 'Upload image'}</strong>
             <small>{language === 'cn' ? '支持 JPG/PNG/HEIC，10MB 内' : 'JPG, PNG, or HEIC under 10MB'}</small>
@@ -369,7 +407,7 @@ export function RoutePage() {
           <div className="moment-action-panel">
             <div className="scene-grid">
               {scenes.map((scene) => (
-                <button className={presentMoment.scene === scene.id ? 'selected' : ''} key={scene.id} type="button" onClick={() => applyMoment(scene.id)}>
+                <button className={presentMoment.scene === scene.id ? 'selected' : ''} key={scene.id} type="button" disabled={isFollower} onClick={() => applyMoment(scene.id)}>
                   {scene.icon} {language === 'cn' ? scene.cn : scene.en}
                 </button>
               ))}
@@ -383,10 +421,11 @@ export function RoutePage() {
               className="moment-input"
               value={momentText}
               onChange={(event) => setMomentText(event.target.value)}
+              disabled={isFollower}
               placeholder={language === 'cn' ? '此刻你们在哪里？刚刚发生了什么？' : 'Where are you now? What just happened?'}
               aria-label={language === 'cn' ? '此刻信息' : 'Present moment note'}
             />
-            <button className="primary-btn" disabled={!momentText.trim()} type="button" onClick={applyTextMoment}>
+            <button className="primary-btn" disabled={isFollower || !momentText.trim()} type="button" onClick={applyTextMoment}>
               {language === 'cn' ? '应用这句话' : 'Apply this note'}
             </button>
           </div>
@@ -396,7 +435,7 @@ export function RoutePage() {
           <div className="moment-action-panel">
             <label className="moment-upload">
               <span>{language === 'cn' ? '上传此刻图片（≤10MB）' : 'Upload moment image (≤10MB)'}</span>
-              <input accept="image/*,.heic,.heif" type="file" onChange={(event) => { void handleImageUpload(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+              <input accept="image/*,.heic,.heif" type="file" disabled={isFollower} onChange={(event) => { void handleImageUpload(event.target.files?.[0]); event.currentTarget.value = ''; }} />
             </label>
           </div>
         )}
@@ -422,11 +461,22 @@ export function RoutePage() {
       </section>
 
       <div className="flow-actions">
-        <button type="button" onClick={previousStep}>{language === 'cn' ? '返回' : 'Back'}</button>
-        <button className="primary-btn" disabled={isStartingJourney} type="button" onClick={startJourney}>
-          {isStartingJourney
-            ? (language === 'cn' ? 'AI 出题中…' : 'AI generating…')
-            : (language === 'cn' ? '开始旅程' : 'Begin Journey')}
+        {!isFollower && (
+          <button type="button" onClick={previousStep}>{language === 'cn' ? '返回' : 'Back'}</button>
+        )}
+        <button
+          className="primary-btn"
+          disabled={isFollower || isStartingJourney}
+          type="button"
+          onClick={() => { void startJourney(); }}
+        >
+          {isFollower
+            ? (aiLoading
+                ? (cn ? '等待对方生成路线…' : 'Waiting for route…')
+                : (cn ? '等待对方开始…' : 'Waiting for partner…'))
+            : isStartingJourney
+              ? (cn ? 'AI 出题中…' : 'AI generating…')
+              : (cn ? '开始旅程' : 'Begin Journey')}
         </button>
       </div>
     </main>
