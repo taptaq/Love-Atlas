@@ -187,9 +187,11 @@ const QUESTION_MATRIX: Record<LegacyStage, Record<LegacyGoal, MatrixEntry>> = {
 
 const stageMap: Record<RelationshipStage, LegacyStage> = {
   new: 'ambiguous',
+  ambiguous: 'ambiguous',
   dating: 'love',
   'long-term': 'long_term',
   'long-distance': 'long_distance',
+  reconnect: 'reconnect',
 };
 
 const goalMap: Partial<Record<JourneyGoal, LegacyGoal>> = {
